@@ -60,8 +60,6 @@ if "master_df" not in st.session_state: st.session_state.master_df = None
 if "stock_df" not in st.session_state: st.session_state.stock_df = None
 if "plants" not in st.session_state: st.session_state.plants = []
 
-if "search_input_val" not in st.session_state: st.session_state.search_input_val = ""
-if "qty_input_val" not in st.session_state: st.session_state.qty_input_val = "1"
 if "active_item" not in st.session_state: st.session_state.active_item = None
 
 # --- القائمة الجانبية (إدارة الملفات) ---
@@ -83,8 +81,8 @@ with st.sidebar:
         st.session_state.scanned_internal = []
         st.session_state.scanned_damage = []
         st.session_state.scanned_recipe = []
-        st.session_state.search_input_val = ""
         st.session_state.active_item = None
+        if "barcode_field" in st.session_state: st.session_state.barcode_field = ""
         st.rerun()
 
 # حماية النظام
@@ -165,7 +163,8 @@ def handle_quantity_entry():
             current_list.append(new_row)
             
         st.session_state.active_item = None
-        st.session_state.search_input_val = ""
+        # 🌟 هنا السر: مسح وتصفير حقل الباركود تلقائياً بعد إنهاء الحفظ لتستقبل الصنف التالي مباشرة
+        st.session_state.barcode_field = ""
 
 # حقل إدخال الكود الأساسي
 st.text_input("🔍 امسح الباركود أو اكتب الكود هنا واضغط Enter:", key="barcode_field", on_change=handle_barcode_entry)
@@ -180,7 +179,7 @@ if st.session_state.active_item:
         p_col = [c for c in st.session_state.stock_df.columns if str(c[0]).strip() == plant_selected]
         if p_col: live_stock = str(s_match.iloc[0][p_col[0]]).split('.')[0]
     
-    # 🌟 تصميم مدمج وممتاز يظهر الاسم بالكامل بدون أي قطع
+    # تصميم مدمج وممتاز يظهر الاسم بالكامل بدون أي قطع
     st.markdown(f"""
     <div class="item-box">
         <div class="item-title">📋 {item['Name']}</div>
