@@ -108,7 +108,7 @@ modes_list = ["Barcode", "SAP", "Orion"]
 if mode == "damage": modes_list.insert(0, "Short")
 search_mode = st.radio("طريقة البحث:", modes_list, horizontal=True)
 
-# حقل إدخال الباركود الأساسي
+# حقل إدخال الباركود الأساسي خارج الفورم ليعمل البحث فوراً عند المسح
 search_input = st.text_input("🔍 امسح الباركود أو اكتب الكود:", key="search_field")
 
 # --- منطق البحث الجذري ---
@@ -158,7 +158,7 @@ if search_input:
     else:
         st.error("❌ الصنف غير موجود، تحقق من طريقة البحث!")
 
-# --- نموذج الكمية المحسّن كـ Form نصي ---
+# --- نموذج الكمية كـ Form نصي لضمان معالجة الإدخال والحفظ المباشر المتتالي ---
 if found_item:
     with st.form(key="final_qty_form", clear_on_submit=True):
         unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
@@ -196,31 +196,32 @@ if found_item:
                 st.success("✅ تم حفظ الصنف!")
                 st.rerun()
 
-# --- ⚡ سكريبت الجافا سكريبت الاحترافي لإرجاع الفوكس تلقائياً للباركود ⚡ ---
+# --- ⚡ سكريبت الجافا سكريبت الأقوى لإرجاع التركيز وإجبار الكيبورد ⚡ ---
 components.html(
     """
     <script>
     const doc = window.parent.document;
     
-    // دالة للتركيز التلقائي على حقل الباركود عند بداية التشغيل أو بعد الحفظ
-    function focusBarcode() {
+    // دالة صارمة للتركيز المباشر على الباركود
+    function enforceBarcodeFocus() {
         setTimeout(() => {
-            const barcodeField = doc.querySelector('input[aria-label*="امسح الباركود"]');
-            if (barcodeField) {
-                barcodeField.focus();
-                barcodeField.select();
+            const barcodeInput = doc.querySelector('input[aria-label*="امسح الباركود"]');
+            if (barcodeInput) {
+                barcodeInput.focus();
+                barcodeInput.select();
             }
-        }, 400);
+        }, 350);
     }
-    
-    // تشغيل الفوكس التلقائي فور تحميل الصفحة
-    focusBarcode();
 
+    // تشغيل التركيز فور تحميل الصفحة أو بعد الـ Rerun
+    enforceBarcodeFocus();
+
+    // مراقبة ضغط الكيبورد بالكامل في الصفحة
     doc.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') {
             const activeEl = doc.activeElement;
             
-            // 1. عند الضغط على Enter في حقل الباركود -> انتقال فوري للكمية
+            // 1. إذا كنا في الباركود وضغطنا Enter -> يذهب فوراً للكمية
             if (activeEl && activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('امسح الباركود')) {
                 setTimeout(() => {
                     const qtyField = doc.querySelector('input[aria-label*="اكتب الكمية"]');
@@ -228,15 +229,15 @@ components.html(
                         qtyField.focus();
                         qtyField.select();
                     }
-                }, 300);
+                }, 200);
             }
             
-            // 2. عند الضغط على Enter في حقل الكمية -> حفظ ثم إعادة الفوكس للباركود تلقائياً
+            // 2. إذا كنا في الكمية وضغطنا Enter -> يحفظ ويجبر المؤشر على العودة للباركود
             if (activeEl && activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('اكتب الكمية')) {
                 const formSubmitBtn = doc.querySelector('button[data-testid="stFormSubmitButton"]');
                 if (formSubmitBtn) {
                     formSubmitBtn.click();
-                    focusBarcode(); // إعادة المؤشر للباركود مباشرة بعد الضغط والحفظ
+                    enforceBarcodeFocus(); // توجيه فوري وعنيف للمؤشر ليعود للباركود
                 }
             }
         }
