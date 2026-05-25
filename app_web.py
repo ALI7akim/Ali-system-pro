@@ -47,6 +47,9 @@ if "master_df" not in st.session_state: st.session_state.master_df = None
 if "stock_df" not in st.session_state: st.session_state.stock_df = None
 if "plants" not in st.session_state: st.session_state.plants = []
 
+# حقل تحكم لإعادة الفوكس برمجياً للباركود
+if "focus_trigger" not in st.session_state: st.session_state.focus_trigger = 0
+
 # --- إدارة رفع الملفات عبر القائمة الجانبية ---
 with st.sidebar:
     st.header("⚙️ إدارة ملفات النظام")
@@ -108,7 +111,7 @@ modes_list = ["Barcode", "SAP", "Orion"]
 if mode == "damage": modes_list.insert(0, "Short")
 search_mode = st.radio("طريقة البحث:", modes_list, horizontal=True)
 
-# حقل إدخال الباركود الأساسي خارج الفورم ليعمل البحث فوراً عند المسح
+# حقل إدخال الباركود الأساسي
 search_input = st.text_input("🔍 امسح الباركود أو اكتب الكود:", key="search_field")
 
 # --- منطق البحث الجذري ---
@@ -158,7 +161,7 @@ if search_input:
     else:
         st.error("❌ الصنف غير موجود، تحقق من طريقة البحث!")
 
-# --- نموذج الكمية كـ Form نصي لضمان معالجة الإدخال والحفظ المباشر المتتالي ---
+# --- نموذج الكمية كـ Form نصي متطور مع ميزة التصفير الشامل عند الحفظ ---
 if found_item:
     with st.form(key="final_qty_form", clear_on_submit=True):
         unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
@@ -193,58 +196,58 @@ if found_item:
                     if mode == "internal": new_row["Date"] = date_input
                     current_list.append(new_row)
                 
-                st.success("✅ تم حفظ الصنف!")
+                # السر هنا: تصفير حقل البحث برمجياً وتحديث الحالة لإعادة التركيز التلقائي للباركود
+                st.session_state["search_field"] = ""
+                st.session_state.focus_trigger += 1
                 st.rerun()
 
-# --- ⚡ سكريبت الجافا سكريبت الأقوى لإرجاع التركيز وإجبار الكيبورد ⚡ ---
+# --- ⚡ سكريبت التوجيه وإجبار الفوكس على العودة للباركود بنسبة 100% ⚡ ---
 components.html(
-    """
+    f"""
     <script>
     const doc = window.parent.document;
     
-    // دالة صارمة للتركيز المباشر على الباركود
-    function enforceBarcodeFocus() {
-        setTimeout(() => {
-            const barcodeInput = doc.querySelector('input[aria-label*="امسح الباركود"]');
-            if (barcodeInput) {
-                barcodeInput.focus();
-                barcodeInput.select();
-            }
-        }, 350);
-    }
+    function focusBarcode() {{
+        setTimeout(() => {{
+            const barcodeField = doc.querySelector('input[aria-label*="امسح الباركود"]');
+            if (barcodeField) {{
+                barcodeField.focus();
+                barcodeField.select();
+            }}
+        }}, 300);
+    }}
+    
+    // إعادة التركيز الفوري للباركود بعد الـ rerun وإضافة الصنف
+    focusBarcode();
 
-    // تشغيل التركيز فور تحميل الصفحة أو بعد الـ Rerun
-    enforceBarcodeFocus();
-
-    // مراقبة ضغط الكيبورد بالكامل في الصفحة
-    doc.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
+    doc.addEventListener('keydown', function(e) {{
+        if (e.key === 'Enter') {{
             const activeEl = doc.activeElement;
             
-            // 1. إذا كنا في الباركود وضغطنا Enter -> يذهب فوراً للكمية
-            if (activeEl && activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('امسح الباركود')) {
-                setTimeout(() => {
+            // 1. عند الضغط على Enter في حقل الباركود -> انتقال فوري للكمية
+            if (activeEl && activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('امسح الباركود')) {{
+                setTimeout(() => {{
                     const qtyField = doc.querySelector('input[aria-label*="اكتب الكمية"]');
-                    if (qtyField) {
+                    if (qtyField) {{
                         qtyField.focus();
                         qtyField.select();
                     }
-                }, 200);
-            }
+                }}, 200);
+            }}
             
-            // 2. إذا كنا في الكمية وضغطنا Enter -> يحفظ ويجبر المؤشر على العودة للباركود
-            if (activeEl && activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('اكتب الكمية')) {
+            // 2. عند الضغط على Enter في حقل الكمية -> تنفيذ الحفظ فوراً
+            if (activeEl && activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('اكتب الكمية')) {{
                 const formSubmitBtn = doc.querySelector('button[data-testid="stFormSubmitButton"]');
-                if (formSubmitBtn) {
+                if (formSubmitBtn) {{
                     formSubmitBtn.click();
-                    enforceBarcodeFocus(); // توجيه فوري وعنيف للمؤشر ليعود للباركود
-                }
-            }
+                }}
+            }}
         }
     });
     </script>
     """,
     height=0,
+    key=f"js_trigger_{st.session_state.focus_trigger}" # إجبار المتصفح على إعادة تشغيل السكريبت والفوكس عند كل عملية حفظ
 )
 
 st.divider()
