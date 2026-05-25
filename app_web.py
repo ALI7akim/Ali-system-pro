@@ -7,7 +7,7 @@ import os
 # إعدادات الصفحة
 st.set_page_config(page_title="ALI SYSTEM PRO", page_icon="📦", layout="centered")
 
-# مسارات حفظ الملفات بشكل دائم على السيرفر لكي لا تضيع عند إغلاق المتصفح
+# مسارات حفظ الملفات بشكل دائم على السيرفر
 MASTER_FILE_PATH = "master_db.xlsx"
 STOCK_FILE_PATH = "stock_db.xlsx"
 
@@ -45,40 +45,26 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- دالات قراءة البيانات وتنسيقها ---
-def process_master_df(df):
+# --- دالات قراءة البيانات وتنسيقها مع التخزين المؤقت لتسريع الأداء الفوري ---
+@st.cache_data
+def process_master_file(file_path):
+    if not os.path.exists(file_path):
+        return None
+    df = pd.read_excel(file_path)
     return df.astype(str).apply(lambda x: x.str.strip())
 
-def process_stock_df(df_s):
+@st.cache_data
+def process_stock_file(file_path):
+    if not os.path.exists(file_path):
+        return None, []
+    df_s = pd.read_excel(file_path, header=[0, 1], dtype=str)
     df_s.iloc[:, 0] = df_s.iloc[:, 0].str.strip().replace(r'\.0$', '', regex=True)
     plants = sorted(list(set([str(c[0]).strip() for c in df_s.columns if str(c[0]).strip().isdigit()])))
     return df_s, plants
 
-# --- محرك القراءة التلقائية للملفات المحفوظة مسبقاً ---
-@st.cache_data
-def load_saved_files():
-    m_df, s_df, plants_list = None, None, []
-    
-    # محاولة قراءة ملف الباركودات المحفوظ تلقائياً
-    if os.path.exists(MASTER_FILE_PATH):
-        try:
-            m_df = pd.read_excel(MASTER_FILE_PATH)
-            m_df = process_master_df(m_df)
-        except Exception as e:
-            st.sidebar.error(f"فشل قراءة ملف الباركود المحفوظ: {e}")
-            
-    # محاولة قراءة ملف المخزون المحفوظ تلقائياً
-    if os.path.exists(STOCK_FILE_PATH):
-        try:
-            s_df = pd.read_excel(STOCK_FILE_PATH, header=[0, 1], dtype=str)
-            s_df, plants_list = process_stock_df(s_df)
-        except Exception as e:
-            st.sidebar.error(f"فشل قراءة ملف المخزون المحفوظ: {e}")
-            
-    return m_df, s_df, plants_list
-
-# جلب الملفات المحفوظة فور تشغيل البرنامج
-saved_m, saved_s, saved_p = load_saved_files()
+# --- جلب الملفات المخزنة سرياعاً من الذاكرة المؤقتة ---
+saved_m = process_master_file(MASTER_FILE_PATH)
+saved_s, saved_p = process_stock_file(STOCK_FILE_PATH)
 
 # --- تهيئة متغيرات الجلسة (Session State) ---
 for key in ["scanned_purchase", "scanned_internal", "scanned_damage", "scanned_recipe"]:
@@ -94,7 +80,7 @@ if "selected_plant" not in st.session_state: st.session_state.selected_plant = "
 if "selected_tab" not in st.session_state: st.session_state.selected_tab = "Purchase Req"
 if "barcode_key" not in st.session_state: st.session_state.barcode_key = 0
 
-# --- القائمة الجانبية (لتحديث وإدارة الملفات المخزنة عند الحاجة) ---
+# --- القائمة الجانبية لإدارة وتحديث الملفات المحفوظة ---
 with st.sidebar:
     st.header("⚙️ إدارة وتحديث الملفات المحفوظة")
     
@@ -114,9 +100,9 @@ with st.sidebar:
         try:
             df_temp = pd.read_excel(new_master)
             df_temp.to_excel(MASTER_FILE_PATH, index=False) # حفظ على السيرفر
-            st.session_state.master_df = process_master_df(df_temp)
+            st.cache_data.clear() # الطريقة الصحيحة لتحديث الذاكرة المؤقتة لـ Streamlit
+            st.session_state.master_df = process_master_file(MASTER_FILE_PATH)
             st.success("✅ تم تحديث وحفظ ملف الباركودات بنجاح!")
-            st.clear_cache()
             st.rerun()
         except Exception as e: st.error(f"خطأ أثناء الحفظ: {e}")
             
@@ -124,10 +110,10 @@ with st.sidebar:
     if new_stock:
         try:
             df_s_temp = pd.read_excel(new_stock, header=[0, 1], dtype=str)
-            df_s_temp.to_excel(STOCK_FILE_PATH) # حفظ على السيرفر
-            st.session_state.stock_df, st.session_state.plants = process_stock_df(df_s_temp)
+            df_s_temp.to_excel(STOCK_FILE_PATH, index=False) # حفظ على السيرفر
+            st.cache_data.clear() # الطريقة الصحيحة لتحديث الذاكرة المؤقتة لـ Streamlit
+            st.session_state.stock_df, st.session_state.plants = process_stock_file(STOCK_FILE_PATH)
             st.success("✅ تم تحديث وحفظ ملف المخزون بنجاح!")
-            st.clear_cache()
             st.rerun()
         except Exception as e: st.error(f"خطأ أثناء الحفظ: {e}")
 
@@ -145,7 +131,7 @@ order_options = {
 }
 
 # ==============================================================================
-# 🚪 الصفحة الأولى: اختيار الإعدادات والفرع والقسم (تفتح تلقائياً الآن)
+# 🚪 الصفحة الأولى: اختيار الإعدادات والفرع والقسم
 # ==============================================================================
 if st.session_state.app_page == "setup":
     st.markdown('<div class="group-box"><div class="group-title">🏢 خطوة 1: تحديد وجهة العمل والفرع</div>', unsafe_allow_html=True)
@@ -168,7 +154,7 @@ if st.session_state.app_page == "setup":
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
-# 🔍 الصفحة الثانية: شاشة المسح الفوري والجرد 
+# 🔍 الصفحة الثانية: شاشة المسح الفوري والجرد
 # ==============================================================================
 elif st.session_state.app_page == "scan":
     mode = {"Purchase Req": "purchase", "Internal Sale": "internal", "Damage Issue": "damage", "Recipe Issue": "recipe"}[st.session_state.selected_tab]
@@ -296,7 +282,7 @@ elif st.session_state.app_page == "scan":
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ==============================================================================
-    # 📊 خطوة 3: لوحة المعاينة والعدادات الثلاثية أسفل الصفحة عند الجداول
+    # 📊 خطوة 3: لوحة المعاينة والعدادات الثلاثية أسفل الصفحة
     # ==============================================================================
     if current_list:
         st.markdown('<div class="group-box"><div class="group-title">📊 لوحة مراجعة ومعاينة القائمة الإجمالية</div>', unsafe_allow_html=True)
