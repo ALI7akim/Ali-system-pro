@@ -46,8 +46,9 @@ if "master_df" not in st.session_state: st.session_state.master_df = None
 if "stock_df" not in st.session_state: st.session_state.stock_df = None
 if "plants" not in st.session_state: st.session_state.plants = []
 
-# حقل مؤقت مستقر للتحكم في قيمة الباركود والبحث المباشر
-if "barcode_query" not in st.session_state: st.session_state.barcode_query = ""
+# عداد ديناميكي لإعادة تهيئة حقل الباركود وتصفيره برمجياً وتلقائياً ليعود الفوكس له
+if "barcode_iteration" not in st.session_state: st.session_state.barcode_iteration = 0
+if "current_valid_barcode" not in st.session_state: st.session_state.current_valid_barcode = ""
 
 # --- إدارة رفع الملفات عبر القائمة الجانبية ---
 with st.sidebar:
@@ -68,7 +69,8 @@ with st.sidebar:
         st.session_state.scanned_internal = []
         st.session_state.scanned_damage = []
         st.session_state.scanned_recipe = []
-        st.session_state.barcode_query = ""
+        st.session_state.current_valid_barcode = ""
+        st.session_state.barcode_iteration += 1
         st.rerun()
 
 # حماية النظام من العمل دون ملفات
@@ -111,15 +113,19 @@ modes_list = ["Barcode", "SAP", "Orion"]
 if mode == "damage": modes_list.insert(0, "Short")
 search_mode = st.radio("طريقة البحث:", modes_list, horizontal=True)
 
-# دالة الاستماع لتغيير الحقل تفرغ القيمة فوراً للبحث الصافي
-def trigger_search():
-    st.session_state.barcode_query = st.session_state.main_search_field
+# دالة الاستماع عند إدخال الباركود والضغط على Enter
+def on_barcode_enter():
+    st.session_state.current_valid_barcode = st.session_state[f"barcode_field_iter_{st.session_state.barcode_iteration}"]
 
-# حقل إدخال الباركود المباشر والسريع
-search_input = st.text_input("🔍 امسح الباركود أو اكتب الكود هنا:", key="main_search_field", on_change=trigger_search)
+# حقل إدخال الباركود المباشر والسريع بمفتاح متغير ديناميكياً لتصفيره التلقائي
+search_input = st.text_input(
+    "🔍 امسح الباركود أو اكتب الكود هنا:", 
+    key=f"barcode_field_iter_{st.session_state.barcode_iteration}", 
+    on_change=on_barcode_enter
+)
 
-# الاستعانة بالمتغير المستقر للبحث
-current_barcode = st.session_state.barcode_query.strip()
+# القراءة الصافية للباركود الحالي المعالج
+current_barcode = st.session_state.current_valid_barcode.strip()
 
 # --- منطق البحث الجذري ---
 found_item = None
@@ -168,7 +174,7 @@ if current_barcode:
     else:
         st.error("❌ الصنف غير موجود، تحقق من طريقة البحث!")
 
-# --- نموذج حفظ الكمية النقي والمتوافق مع النسخ الجديدة ---
+# --- نموذج حفظ الكمية الصارم مع التصفير الذكي للـ Key للعودة للباركود ---
 if found_item:
     with st.form(key="fast_qty_submit_form", clear_on_submit=True):
         unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
@@ -203,9 +209,9 @@ if found_item:
                     if mode == "internal": new_row["Date"] = date_input
                     current_list.append(new_row)
                 
-                # السحر هنا: تصفير خانة البحث تماماً وإجبار المتصفح على التركيز التلقائي عليها عند الـ Rerun
-                st.session_state.barcode_query = ""
-                st.session_state.main_search_field = ""
+                # تحديث التريجر لتصفير الخانة ونقل التركيز التلقائي للباركود بشكل سليم وآمن
+                st.session_state.current_valid_barcode = ""
+                st.session_state.barcode_iteration += 1
                 st.rerun()
 
 st.divider()
