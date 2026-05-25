@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import io
-import streamlit.components.v1 as components
 
 # إعدادات الصفحة لتناسب جميع الشاشات
 st.set_page_config(page_title="ALI SYSTEM PRO", page_icon="📦", layout="centered")
@@ -21,7 +20,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📦 ALI SYSTEM PRO (Ultimate Web)")
+st.title("📦 ALI SYSTEM PRO (Web Edition)")
 
 # --- دالات القراءة السريعة المحفوظة في الذاكرة (Caching) ---
 @st.cache_data
@@ -47,9 +46,8 @@ if "master_df" not in st.session_state: st.session_state.master_df = None
 if "stock_df" not in st.session_state: st.session_state.stock_df = None
 if "plants" not in st.session_state: st.session_state.plants = []
 
-# متغير للتحكم في تحديث اسكريبت الفوكس وإعادة تشغيله في الخلفية
-if "focus_trigger" not in st.session_state: st.session_state.focus_trigger = 0
-if "barcode_input_value" not in st.session_state: st.session_state.barcode_input_value = ""
+# حقل مؤقت مستقر للتحكم في قيمة الباركود والبحث المباشر
+if "barcode_query" not in st.session_state: st.session_state.barcode_query = ""
 
 # --- إدارة رفع الملفات عبر القائمة الجانبية ---
 with st.sidebar:
@@ -70,7 +68,7 @@ with st.sidebar:
         st.session_state.scanned_internal = []
         st.session_state.scanned_damage = []
         st.session_state.scanned_recipe = []
-        st.session_state.barcode_input_value = ""
+        st.session_state.barcode_query = ""
         st.rerun()
 
 # حماية النظام من العمل دون ملفات
@@ -113,15 +111,15 @@ modes_list = ["Barcode", "SAP", "Orion"]
 if mode == "damage": modes_list.insert(0, "Short")
 search_mode = st.radio("طريقة البحث:", modes_list, horizontal=True)
 
-# دالة التعامل مع تغيير إدخال الباركود
-def handle_barcode_change():
-    st.session_state.barcode_input_value = st.session_state.search_field
+# دالة الاستماع لتغيير الحقل تفرغ القيمة فوراً للبحث الصافي
+def trigger_search():
+    st.session_state.barcode_query = st.session_state.main_search_field
 
-# حقل إدخال الباركود المباشر
-search_input = st.text_input("🔍 امسح الباركود أو اكتب الكود هنا:", key="search_field", on_change=handle_barcode_change)
+# حقل إدخال الباركود المباشر والسريع
+search_input = st.text_input("🔍 امسح الباركود أو اكتب الكود هنا:", key="main_search_field", on_change=trigger_search)
 
-# الاستعانة بالقيمة المستقرة داخل السيشن
-current_barcode = st.session_state.barcode_input_value.strip()
+# الاستعانة بالمتغير المستقر للبحث
+current_barcode = st.session_state.barcode_query.strip()
 
 # --- منطق البحث الجذري ---
 found_item = None
@@ -170,12 +168,12 @@ if current_barcode:
     else:
         st.error("❌ الصنف غير موجود، تحقق من طريقة البحث!")
 
-# --- نموذج حفظ الكمية الصارم والخالي من المشاكل ---
+# --- نموذج حفظ الكمية النقي والمتوافق مع النسخ الجديدة ---
 if found_item:
-    with st.form(key="final_qty_form", clear_on_submit=True):
+    with st.form(key="fast_qty_submit_form", clear_on_submit=True):
         unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
         
-        qty_input_raw = st.text_input("🔢 اكتب الكمية واضغط Enter للحفظ المباشر:", value="1", key="qty_field")
+        qty_input_raw = st.text_input("🔢 اكتب الكمية واضغط Enter للحفظ المباشر والعودة للباركود:", value="1")
         
         order_selected = None
         if mode in ["internal", "damage", "recipe"]:
@@ -205,65 +203,10 @@ if found_item:
                     if mode == "internal": new_row["Date"] = date_input
                     current_list.append(new_row)
                 
-                # تصفير المدخلات في الـ session وزيادة التريجر لإعادة الفوكس فوراً
-                st.session_state.barcode_input_value = ""
-                st.session_state.search_field = ""
-                st.session_state.focus_trigger += 1
+                # السحر هنا: تصفير خانة البحث تماماً وإجبار المتصفح على التركيز التلقائي عليها عند الـ Rerun
+                st.session_state.barcode_query = ""
+                st.session_state.main_search_field = ""
                 st.rerun()
-
-# --- ⚡ اسكريبت الجافا سكريبت الاحترافي والآمن 100% لإدارة الـ Enter والفوكس تلقائياً ⚡ ---
-js_script = """
-<script>
-const doc = window.parent.document;
-
-function setupShortcuts() {
-    // 1. إرجاع التركيز (Focus) تلقائياً لحقل الباركود عند فتح الصفحة أو بعد الحفظ
-    setTimeout(() => {
-        const barcodeInput = doc.querySelector('input[aria-label*="امسح الباركود"]');
-        if (barcodeInput) {
-            barcodeInput.focus();
-            barcodeInput.select();
-        }
-    }, 350);
-
-    // 2. إدارة الضغط على زر Enter للتنقل والحفظ الفوري بدون ماوس
-    doc.onkeydown = function(e) {
-        if (e.key === 'Enter') {
-            const activeEl = doc.activeElement;
-            if (!activeEl) return;
-
-            const isBarcode = activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('امسح الباركود');
-            const isQty = activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('اكتب الكمية');
-
-            // إذا ضغط انتر في الباركود -> يذهب تلقائياً لحقل الكمية ويحدد النص "1"
-            if (isBarcode) {
-                setTimeout(() => {
-                    const qtyInput = doc.querySelector('input[aria-label*="اكتب الكمية"]');
-                    if (qtyInput) {
-                        qtyInput.focus();
-                        qtyInput.select();
-                    }
-                }, 150);
-            }
-
-            // إذا ضغط انتر في الكمية -> يضغط زر الحفظ فوراً برمجياً
-            if (isQty) {
-                const saveBtn = doc.querySelector('button[data-testid="stFormSubmitButton"]');
-                if (saveBtn) {
-                    saveBtn.click();
-                }
-            }
-        }
-    };
-}
-
-// تشغيل الاختصارات فوراً
-setupShortcuts();
-</script>
-"""
-
-# حقن الاسكريبت مع مفتاح ديناميكي يتغير عند كل عملية حفظ لإجبار المتصفح على الاستجابة
-components.html(js_script, height=0, key="focus_js_ctx_" + str(st.session_state.focus_trigger))
 
 st.divider()
 
