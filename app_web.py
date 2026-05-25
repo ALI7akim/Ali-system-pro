@@ -17,6 +17,25 @@ st.markdown("""
 
 st.title("📦 ALI SYSTEM PRO (Web Edition)")
 
+# --- دالات القراءة السريعة المحفوظة في الذاكرة (Caching) ---
+@st.cache_data
+def load_master_file(uploaded_file):
+    if uploaded_file.name.endswith('x'):
+        df = pd.read_excel(uploaded_file)
+    else:
+        df = pd.read_csv(uploaded_file)
+    return df.astype(str).apply(lambda x: x.str.strip())
+
+@st.cache_data
+def load_stock_file(uploaded_file):
+    if uploaded_file.name.endswith('x'):
+        df_s = pd.read_excel(uploaded_file, header=[0, 1], dtype=str)
+    else:
+        df_s = pd.read_csv(uploaded_file, header=[0, 1], dtype=str)
+    df_s.iloc[:, 0] = df_s.iloc[:, 0].str.strip().replace(r'\.0$', '', regex=True)
+    plants = sorted(list(set([str(c[0]).strip() for c in df_s.columns if str(c[0]).strip().isdigit()])))
+    return df_s, plants
+
 # --- تهيئة الذاكرة المؤقتة للجلسة (Session State) ---
 if "scanned_purchase" not in st.session_state: st.session_state.scanned_purchase = []
 if "scanned_internal" not in st.session_state: st.session_state.scanned_internal = []
@@ -34,17 +53,13 @@ with st.sidebar:
     
     if master_file:
         try:
-            df = pd.read_excel(master_file) if master_file.name.endswith('x') else pd.read_csv(master_file)
-            st.session_state.master_df = df.astype(str).apply(lambda x: x.str.strip())
+            st.session_state.master_df = load_master_file(master_file)
             st.success("✅ تم تحميل الباركودات")
         except Exception as e: st.error(f"خطأ في ملف الباركودات: {e}")
         
     if stock_file:
         try:
-            df_s = pd.read_excel(stock_file, header=[0, 1], dtype=str) if stock_file.name.endswith('x') else pd.read_csv(stock_file, header=[0, 1], dtype=str)
-            df_s.iloc[:, 0] = df_s.iloc[:, 0].str.strip().replace(r'\.0$', '', regex=True)
-            st.session_state.stock_df = df_s
-            st.session_state.plants = sorted(list(set([str(c[0]).strip() for c in df_s.columns if str(c[0]).strip().isdigit()])))
+            st.session_state.stock_df, st.session_state.plants = load_stock_file(stock_file)
             st.success("✅ تم تحميل المخزون")
         except Exception as e: st.error(f"خطأ في ملف المخزون: {e}")
 
@@ -161,7 +176,6 @@ if found_item:
         
     if st.button("➕ حفظ الصنف إلى القائمة"):
         if qty_input > 0:
-            # التحقق من التكرار والدمج تلقائياً
             duplicate = False
             for idx, ex in enumerate(current_list):
                 if ex['SAP'] == found_item['SAP']:
@@ -232,7 +246,6 @@ if current_list:
             
     df_final = pd.DataFrame(final_rows)
     
-    # تحويل الملف المجهز إلى سيل بايتات للتنزيل الفوري عبر المتصفح
     # Excel Export
     buffer_xlsx = io.BytesIO()
     with pd.ExcelWriter(buffer_xlsx, engine='openpyxl') as writer:
