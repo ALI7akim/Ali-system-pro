@@ -46,9 +46,10 @@ if "master_df" not in st.session_state: st.session_state.master_df = None
 if "stock_df" not in st.session_state: st.session_state.stock_df = None
 if "plants" not in st.session_state: st.session_state.plants = []
 
-# عداد ديناميكي لإعادة تهيئة حقل الباركود وتصفيره برمجياً وتلقائياً ليعود الفوكس له
-if "barcode_iteration" not in st.session_state: st.session_state.barcode_iteration = 0
-if "current_valid_barcode" not in st.session_state: st.session_state.current_valid_barcode = ""
+# متغيرات لتتبع حالة البحث والكمية بشكل آمن وعام
+if "search_input_val" not in st.session_state: st.session_state.search_input_val = ""
+if "qty_input_val" not in st.session_state: st.session_state.qty_input_val = "1"
+if "active_item" not in st.session_state: st.session_state.active_item = None
 
 # --- إدارة رفع الملفات عبر القائمة الجانبية ---
 with st.sidebar:
@@ -69,8 +70,8 @@ with st.sidebar:
         st.session_state.scanned_internal = []
         st.session_state.scanned_damage = []
         st.session_state.scanned_recipe = []
-        st.session_state.current_valid_barcode = ""
-        st.session_state.barcode_iteration += 1
+        st.session_state.search_input_val = ""
+        st.session_state.active_item = None
         st.rerun()
 
 # حماية النظام من العمل دون ملفات
@@ -113,24 +114,13 @@ modes_list = ["Barcode", "SAP", "Orion"]
 if mode == "damage": modes_list.insert(0, "Short")
 search_mode = st.radio("طريقة البحث:", modes_list, horizontal=True)
 
-# دالة الاستماع عند إدخال الباركود والضغط على Enter
-def on_barcode_enter():
-    st.session_state.current_valid_barcode = st.session_state[f"barcode_field_iter_{st.session_state.barcode_iteration}"]
 
-# حقل إدخال الباركود المباشر والسريع بمفتاح متغير ديناميكياً لتصفيره التلقائي
-search_input = st.text_input(
-    "🔍 امسح الباركود أو اكتب الكود هنا:", 
-    key=f"barcode_field_iter_{st.session_state.barcode_iteration}", 
-    on_change=on_barcode_enter
-)
-
-# القراءة الصافية للباركود الحالي المعالج
-current_barcode = st.session_state.current_valid_barcode.strip()
-
-# --- منطق البحث الجذري ---
-found_item = None
-if current_barcode:
-    val = current_barcode
+# --- دالات معالجة الإدخال السريع جداً ---
+def handle_barcode_entry():
+    val = st.session_state.barcode_field.strip()
+    if not val:
+        return
+        
     if search_mode == "Short" and len(val) >= 6: val = val[2:6]
     
     sap_code = None
@@ -149,74 +139,83 @@ if current_barcode:
 
     if sap_code:
         row = st.session_state.master_df[st.session_state.master_df['Item Code'].astype(str).str.strip().replace(r'\.0$', '', regex=True) == sap_code].iloc[0]
-        found_item = {
+        st.session_state.active_item = {
             "SAP": sap_code, "Name": str(row['Item Name']), "Supplier": str(row['Supplier Name']),
             "Factor": str(row['Factor']).split('.')[0], "Unit": str(row['UOM CODE']), "Supplier_ID": str(row['Supplier']).split('.')[0]
         }
-        
-        # جلب المخزون والمبيعات السابقة
-        s_match = st.session_state.stock_df[st.session_state.stock_df.iloc[:, 0].astype(str).str.strip().replace(r'\.0$', '', regex=True) == sap_code]
-        live_stock = "-"
-        if not s_match.empty:
-            p_col = [c for c in st.session_state.stock_df.columns if str(c[0]).strip() == plant_selected]
-            if p_col: live_stock = str(s_match.iloc[0][p_col[0]]).split('.')[0]
-            
-            # قسم المبيعات السابقة بحجم الخط المصغر
-            st.markdown("<p style='font-size:13px; font-weight:bold; margin-bottom:5px;'>📊 مبيعات الأشهر السابقة:</p>", unsafe_allow_html=True)
-            sales_cols = [c for c in st.session_state.stock_df.columns if "Total Sales" in str(c[0])]
-            cols_sales = st.columns(len(sales_cols) if sales_cols else 1)
-            for i, sc in enumerate(sales_cols):
-                with cols_sales[i]:
-                    try: st.metric(label=str(sc[1]).strip(), value=f"{float(s_match.iloc[0][sc]):g}")
-                    except: pass
-        
-        st.info(f"**الصنف المختار:** {found_item['Name']} | **SAP:** {found_item['SAP']} | **المخزون الحالي:** {live_stock}")
     else:
-        st.error("❌ الصنف غير موجود، تحقق من طريقة البحث!")
+        st.session_state.active_item = None
 
-# --- نموذج حفظ الكمية الصارم مع التصفير الذكي للـ Key للعودة للباركود ---
-if found_item:
-    with st.form(key="fast_qty_submit_form", clear_on_submit=True):
-        unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
+
+def handle_quantity_entry():
+    if not st.session_state.active_item:
+        return
         
-        qty_input_raw = st.text_input("🔢 اكتب الكمية واضغط Enter للحفظ المباشر والعودة للباركود:", value="1")
+    try: qty_input = float(st.session_state.qty_field.strip())
+    except ValueError: qty_input = 0.0
         
-        order_selected = None
-        if mode in ["internal", "damage", "recipe"]:
-            order_key = st.selectbox("🎯 اختر الـ Order Group:", list(order_options.keys()))
-            order_selected = order_options[order_key]
+    if qty_input > 0:
+        duplicate = False
+        for idx, ex in enumerate(current_list):
+            if ex['SAP'] == st.session_state.active_item['SAP']:
+                current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_input)
+                duplicate = True
+                break
+        
+        if not duplicate:
+            new_row = {
+                "SAP": st.session_state.active_item['SAP'], 
+                "Unit": st.session_state.get('unit_field', st.session_state.active_item['Unit']), 
+                "Qty": str(qty_input),
+                "Plant": plant_selected, 
+                "Supplier_ID": st.session_state.active_item['Supplier_ID'], 
+                "Name": st.session_state.active_item['Name']
+            }
+            if mode in ["internal", "damage", "recipe"]:
+                new_row["Order"] = order_options.get(st.session_state.get('order_field', ''))
+            if mode == "internal": new_row["Date"] = date_input
+            current_list.append(new_row)
             
-        submit_qty = st.form_submit_button("➕ حفظ الصنف إلى القائمة")
+        # تفريغ البيانات تماماً والعودة فوراً لحقل الباركود المفتوح للعملية التالية
+        st.session_state.active_item = None
+        st.session_state.search_input_val = ""
+        st.session_state.qty_input_val = "1"
+
+
+# حقل الباركود النقي والمستقر
+st.text_input("🔍 امسح الباركود أو اكتب الكود هنا واضغط Enter:", key="barcode_field", on_change=handle_barcode_entry)
+
+# استدعاء بيانات الصنف وعرض مبيعاته فوراً وبثبات
+if st.session_state.active_item:
+    item = st.session_state.active_item
+    s_match = st.session_state.stock_df[st.session_state.stock_df.iloc[:, 0].astype(str).str.strip().replace(r'\.0$', '', regex=True) == item['SAP']]
+    live_stock = "-"
+    if not s_match.empty:
+        p_col = [c for c in st.session_state.stock_df.columns if str(c[0]).strip() == plant_selected]
+        if p_col: live_stock = str(s_match.iloc[0][p_col[0]]).split('.')[0]
         
-        if submit_qty:
-            try: qty_input = float(qty_input_raw.strip())
-            except ValueError: qty_input = 0.0
+        st.markdown("<p style='font-size:13px; font-weight:bold; margin-bottom:5px;'>📊 مبيعات الأشهر السابقة:</p>", unsafe_allow_html=True)
+        sales_cols = [c for c in st.session_state.stock_df.columns if "Total Sales" in str(c[0])]
+        cols_sales = st.columns(len(sales_cols) if sales_cols else 1)
+        for i, sc in enumerate(sales_cols):
+            with cols_sales[i]:
+                try: st.metric(label=str(sc[1]).strip(), value=f"{float(s_match.iloc[0][sc]):g}")
+                except: pass
                 
-            if qty_input > 0:
-                duplicate = False
-                for idx, ex in enumerate(current_list):
-                    if ex['SAP'] == found_item['SAP']:
-                        current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_input)
-                        duplicate = True
-                        break
-                
-                if not duplicate:
-                    new_row = {
-                        "SAP": found_item['SAP'], "Unit": unit_selected, "Qty": str(qty_input),
-                        "Plant": plant_selected, "Supplier_ID": found_item['Supplier_ID'], "Name": found_item['Name']
-                    }
-                    if order_selected: new_row["Order"] = order_selected
-                    if mode == "internal": new_row["Date"] = date_input
-                    current_list.append(new_row)
-                
-                # تحديث التريجر لتصفير الخانة ونقل التركيز التلقائي للباركود بشكل سليم وآمن
-                st.session_state.current_valid_barcode = ""
-                st.session_state.barcode_iteration += 1
-                st.rerun()
+    st.info(f"📦 **الصنف الحالي:** {item['Name']} | **SAP:** {item['SAP']} | **المخزون الحالي:** {live_stock}")
+    
+    # --- حقول تفاصيل الحفظ السريع الحرة ---
+    st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(item['Unit']) if item['Unit'] in unit_options else 0, key="unit_field")
+    
+    if mode in ["internal", "damage", "recipe"]:
+        st.selectbox("🎯 اختر الـ Order Group:", list(order_options.keys()), key="order_field")
+        
+    # حقل الكمية الحر: بمجرد ضغط Enter ينفذ دالة الحفظ السريع فوراً دون أي تصفير للقائمة
+    st.text_input("🔢 اكتب الكمية واضغط Enter للحفظ المباشر والتكرار:", value="1", key="qty_field", on_change=handle_quantity_entry)
 
 st.divider()
 
-# --- لوحة استعراض الجدول والتعديل والحذف 🗑️ ---
+# --- لوحة استعراض الجدول والتعديل والحذف ثابتة ومحمية من المسح التلقائي ---
 st.subheader(f"📋 معاينة وتعديل قائمة ({current_tab})")
 if current_list:
     df_preview = pd.DataFrame(current_list)
@@ -312,4 +311,4 @@ if current_list:
             mime="text/plain"
         )
 else:
-    st.info("القائمة الحالية فارغة.")
+    st.info("القائمة الحالية فارغة وبانتظار مسح الأصناف.")
