@@ -104,7 +104,7 @@ modes_list = ["Barcode", "SAP", "Orion"]
 if mode == "damage": modes_list.insert(0, "Short")
 search_mode = st.radio("طريقة البحث:", modes_list, horizontal=True)
 
-# صناديق الإدخال العادية بدون تفريغ تلقائي معطل
+# صندوق إدخال الباركود الأساسي
 search_input = st.text_input("🔍 امسح الباركود أو اكتب الكود:", key="search_field")
 
 # --- منطق البحث الجذري ---
@@ -153,7 +153,7 @@ if search_input:
     else:
         st.error("❌ الصنف غير موجود، تحقق من طريقة البحث!")
 
-# --- نموذج الكمية الذكي ---
+# --- نموذج الكمية بعد الإصلاح الجذري لمعادلة الخطأ ---
 if found_item:
     unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
     qty_input = st.number_input("🔢 اكتب الكمية:", min_value=0.0, step=1.0, format="%g", key="qty_field")
@@ -165,7 +165,8 @@ if found_item:
         
     submit_qty = st.button("➕ حفظ الصنف إلى القائمة", key="save_btn")
     
-    if (qty_input > 0 and submit_qty) or (qty_input > 0 and st.initial_sidebar_state):
+    # إصلاح شرط الحفظ ليعمل يدوياً أو عبر اختصار الجافا سكريبت بدون أخطاء حمراء
+    if qty_input > 0 and submit_qty:
         duplicate = False
         for idx, ex in enumerate(current_list):
             if ex['SAP'] == found_item['SAP']:
@@ -182,42 +183,44 @@ if found_item:
             if mode == "internal": new_row["Date"] = date_input
             current_list.append(new_row)
         
-        st.success("✅ تم الحفظ بنجاح!")
+        st.success("✅ تم حفظ الصنف بنجاح!")
         st.rerun()
 
-# --- ⚡ جافا سكريبت لحل مشكلة الـ Enter في المتصفحات والهواتف ⚡ ---
+# --- ⚡ كود الجافا سكريبت المطور كلياً لإدارة مفتاح Enter بالملي ثانية ⚡ ---
 components.html(
     """
     <script>
     const doc = window.parent.document;
     
-    // مراقبة حقل الباركود للانتقال عند الضغط على Enter
-    const searchField = doc.querySelector('input[aria-label="🔍 امسح الباركود أو اكتب الكود:"]');
-    if (searchField) {
-        searchField.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
+    // دالة لتنفيذ العمليات عند ضغط Enter في الحقول
+    doc.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            // البحث عن العنصر النشط حالياً
+            const activeEl = doc.activeElement;
+            
+            // 1. إذا كان المستخدم في خانة الباركود وضغط Enter
+            if (activeEl && activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('امسح الباركود')) {
                 setTimeout(() => {
-                    const qtyField = doc.querySelector('input[aria-label="🔢 اكتب الكمية:"]');
-                    if (qtyField) { qtyField.focus(); qtyField.select(); }
-                }, 400);
+                    const qtyField = doc.querySelector('input[aria-label*="اكتب الكمية"]');
+                    if (qtyField) {
+                        qtyField.focus();
+                        qtyField.select();
+                    }
+                }, 300);
             }
-        });
-    }
-
-    // مراقبة حقل الكمية للحفظ عند الضغط على Enter
-    const qtyField = doc.querySelector('input[aria-label="🔢 اكتب الكمية:"]');
-    if (qtyField) {
-        qtyField.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
+            
+            // 2. إذا كان المستخدم في خانة الكمية وضغط Enter
+            if (activeEl && activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('اكتب الكمية')) {
                 e.preventDefault();
-                const saveBtn = doc.querySelector('button[kind="primaryFormSubmit"]');
-                const regularBtn = Array.from(doc.querySelectorAll('button')).find(el => el.textContent.includes('حفظ الصنف'));
-                if (saveBtn) { saveBtn.click(); }
-                else if (regularBtn) { regularBtn.click(); }
+                e.stopPropagation();
+                // البحث عن زر الحفظ والضغط عليه برمجياً
+                const saveBtn = Array.from(doc.querySelectorAll('button')).find(el => el.textContent.includes('حفظ الصنف إلى القائمة'));
+                if (saveBtn) {
+                    saveBtn.click();
+                }
             }
-        });
-    }
+        }
+    });
     </script>
     """,
     height=0,
