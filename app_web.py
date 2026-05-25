@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import io
+import streamlit.components.v1 as components
 
 # إعدادات الصفحة لتناسب جميع الشاشات
 st.set_page_config(page_title="ALI SYSTEM PRO", page_icon="📦", layout="centered")
@@ -103,10 +104,8 @@ modes_list = ["Barcode", "SAP", "Orion"]
 if mode == "damage": modes_list.insert(0, "Short")
 search_mode = st.radio("طريقة البحث:", modes_list, horizontal=True)
 
-# نماذج الإدخال الذكية لتفعيل الـ Enter التلقائي
-with st.form(key="search_form", clear_on_submit=False):
-    search_input = st.text_input("🔍 امسح الباركود أو اكتب الكود ثم اضغط Enter لجلبه:", key="search_field")
-    submit_search = st.form_submit_button("🔍 جلب الصنف")
+# صناديق الإدخال العادية بدون تفريغ تلقائي معطل
+search_input = st.text_input("🔍 امسح الباركود أو اكتب الكود:", key="search_field")
 
 # --- منطق البحث الجذري ---
 found_item = None
@@ -154,38 +153,75 @@ if search_input:
     else:
         st.error("❌ الصنف غير موجود، تحقق من طريقة البحث!")
 
-# --- نموذج الكمية الذكي (يغلق ويحفظ بـ Enter) ---
+# --- نموذج الكمية الذكي ---
 if found_item:
-    with st.form(key="qty_form", clear_on_submit=True):
-        unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
-        qty_input = st.number_input("🔢 اكتب الكمية ثم اضغط Enter للحفظ التلقائي:", min_value=0.0, step=1.0, format="%g", key="focus_qty")
+    unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
+    qty_input = st.number_input("🔢 اكتب الكمية:", min_value=0.0, step=1.0, format="%g", key="qty_field")
+    
+    order_selected = None
+    if mode in ["internal", "damage", "recipe"]:
+        order_key = st.selectbox("🎯 اختر الـ Order Group:", list(order_options.keys()))
+        order_selected = order_options[order_key]
         
-        order_selected = None
-        if mode in ["internal", "damage", "recipe"]:
-            order_key = st.selectbox("🎯 اختر الـ Order Group:", list(order_options.keys()))
-            order_selected = order_options[order_key]
-            
-        submit_qty = st.form_submit_button("➕ حفظ الصنف إلى القائمة")
+    submit_qty = st.button("➕ حفظ الصنف إلى القائمة", key="save_btn")
+    
+    if (qty_input > 0 and submit_qty) or (qty_input > 0 and st.initial_sidebar_state):
+        duplicate = False
+        for idx, ex in enumerate(current_list):
+            if ex['SAP'] == found_item['SAP']:
+                current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_input)
+                duplicate = True
+                break
         
-        if submit_qty and qty_input > 0:
-            duplicate = False
-            for idx, ex in enumerate(current_list):
-                if ex['SAP'] == found_item['SAP']:
-                    current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_input)
-                    duplicate = True
-                    st.success("🔄 تم دمج الكمية بنجاح!")
-                    break
-            
-            if not duplicate:
-                new_row = {
-                    "SAP": found_item['SAP'], "Unit": unit_selected, "Qty": str(qty_input),
-                    "Plant": plant_selected, "Supplier_ID": found_item['Supplier_ID'], "Name": found_item['Name']
-                }
-                if order_selected: new_row["Order"] = order_selected
-                if mode == "internal": new_row["Date"] = date_input
-                current_list.append(new_row)
-                st.success(f"✅ تم إضافة الصنف!")
-            st.rerun()
+        if not duplicate:
+            new_row = {
+                "SAP": found_item['SAP'], "Unit": unit_selected, "Qty": str(qty_input),
+                "Plant": plant_selected, "Supplier_ID": found_item['Supplier_ID'], "Name": found_item['Name']
+            }
+            if order_selected: new_row["Order"] = order_selected
+            if mode == "internal": new_row["Date"] = date_input
+            current_list.append(new_row)
+        
+        st.success("✅ تم الحفظ بنجاح!")
+        st.rerun()
+
+# --- ⚡ جافا سكريبت لحل مشكلة الـ Enter في المتصفحات والهواتف ⚡ ---
+components.html(
+    """
+    <script>
+    const doc = window.parent.document;
+    
+    // مراقبة حقل الباركود للانتقال عند الضغط على Enter
+    const searchField = doc.querySelector('input[aria-label="🔍 امسح الباركود أو اكتب الكود:"]');
+    if (searchField) {
+        searchField.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                setTimeout(() => {
+                    const qtyField = doc.querySelector('input[aria-label="🔢 اكتب الكمية:"]');
+                    if (qtyField) { qtyField.focus(); qtyField.select(); }
+                }, 400);
+            }
+        });
+    }
+
+    // مراقبة حقل الكمية للحفظ عند الضغط على Enter
+    const qtyField = doc.querySelector('input[aria-label="🔢 اكتب الكمية:"]');
+    if (qtyField) {
+        qtyField.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const saveBtn = doc.querySelector('button[kind="primaryFormSubmit"]');
+                const regularBtn = Array.from(doc.querySelectorAll('button')).find(el => el.textContent.includes('حفظ الصنف'));
+                if (saveBtn) { saveBtn.click(); }
+                else if (regularBtn) { regularBtn.click(); }
+            }
+        });
+    }
+    </script>
+    """,
+    height=0,
+)
 
 st.divider()
 
@@ -265,7 +301,6 @@ if current_list:
     st.divider()
     col_dl1, col_dl2 = st.columns(2)
     
-    # زر تصدير الإكسل
     with col_dl1:
         buffer_xlsx = io.BytesIO()
         with pd.ExcelWriter(buffer_xlsx, engine='openpyxl') as writer:
@@ -277,7 +312,6 @@ if current_list:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     
-    # زر تصدير التكست (الذي تمت إعادته بناءً على طلبك ✨)
     with col_dl2:
         buffer_txt = io.BytesIO()
         df_final.to_csv(buffer_txt, sep='\t', index=False)
