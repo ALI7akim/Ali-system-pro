@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import io
+import streamlit.components.v1 as components
 
 # إعدادات الصفحة لتناسب جميع الشاشات
 st.set_page_config(page_title="ALI SYSTEM PRO", page_icon="📦", layout="centered")
@@ -46,7 +47,8 @@ if "master_df" not in st.session_state: st.session_state.master_df = None
 if "stock_df" not in st.session_state: st.session_state.stock_df = None
 if "plants" not in st.session_state: st.session_state.plants = []
 
-# تهيئة المفاتيح الخاصة بالتحكم في تفريغ الحقول وإعادة الفوكس تلقائياً للباركود
+# متغير للتحكم في تحديث اسكريبت الفوكس وإعادة تشغيله في الخلفية
+if "focus_trigger" not in st.session_state: st.session_state.focus_trigger = 0
 if "barcode_input_value" not in st.session_state: st.session_state.barcode_input_value = ""
 
 # --- إدارة رفع الملفات عبر القائمة الجانبية ---
@@ -135,7 +137,7 @@ if current_barcode:
             if not m_stock.empty: sap_code = str(m_stock.iloc[0, 0]).strip().replace('.0', '')
     else:
         s_col = 'Item Barcode' if search_mode in ["Short", "Barcode"] else 'Item Code'
-        m_temp = m_temp = st.session_state.master_df.copy()
+        m_temp = st.session_state.master_df.copy()
         act_col = next((c for c in m_temp.columns if s_col.lower() in str(c).lower()), s_col)
         m_temp[act_col] = m_temp[act_col].astype(str).str.strip().replace(r'\.0$', '', regex=True)
         m_master = m_temp[m_temp[act_col] == val]
@@ -173,7 +175,7 @@ if found_item:
     with st.form(key="final_qty_form", clear_on_submit=True):
         unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
         
-        qty_input_raw = st.text_input("🔢 اكتب الكمية واضغط Enter للحفظ المباشر:", value="1")
+        qty_input_raw = st.text_input("🔢 اكتب الكمية واضغط Enter للحفظ المباشر:", value="1", key="qty_field")
         
         order_selected = None
         if mode in ["internal", "damage", "recipe"]:
@@ -203,11 +205,65 @@ if found_item:
                     if mode == "internal": new_row["Date"] = date_input
                     current_list.append(new_row)
                 
-                # تصفير المدخلات في الـ session لإخفاء النموذج فوراً وإجبار المتصفح على التركيز على الباركود
+                # تصفير المدخلات في الـ session وزيادة التريجر لإعادة الفوكس فوراً
                 st.session_state.barcode_input_value = ""
                 st.session_state.search_field = ""
-                st.success("✅ تم حفظ الصنف بنجاح!")
+                st.session_state.focus_trigger += 1
                 st.rerun()
+
+# --- ⚡ اسكريبت الجافا سكريبت الاحترافي والآمن 100% لإدارة الـ Enter والفوكس تلقائياً ⚡ ---
+js_script = """
+<script>
+const doc = window.parent.document;
+
+function setupShortcuts() {
+    // 1. إرجاع التركيز (Focus) تلقائياً لحقل الباركود عند فتح الصفحة أو بعد الحفظ
+    setTimeout(() => {
+        const barcodeInput = doc.querySelector('input[aria-label*="امسح الباركود"]');
+        if (barcodeInput) {
+            barcodeInput.focus();
+            barcodeInput.select();
+        }
+    }, 350);
+
+    // 2. إدارة الضغط على زر Enter للتنقل والحفظ الفوري بدون ماوس
+    doc.onkeydown = function(e) {
+        if (e.key === 'Enter') {
+            const activeEl = doc.activeElement;
+            if (!activeEl) return;
+
+            const isBarcode = activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('امسح الباركود');
+            const isQty = activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('اكتب الكمية');
+
+            // إذا ضغط انتر في الباركود -> يذهب تلقائياً لحقل الكمية ويحدد النص "1"
+            if (isBarcode) {
+                setTimeout(() => {
+                    const qtyInput = doc.querySelector('input[aria-label*="اكتب الكمية"]');
+                    if (qtyInput) {
+                        qtyInput.focus();
+                        qtyInput.select();
+                    }
+                }, 150);
+            }
+
+            // إذا ضغط انتر في الكمية -> يضغط زر الحفظ فوراً برمجياً
+            if (isQty) {
+                const saveBtn = doc.querySelector('button[data-testid="stFormSubmitButton"]');
+                if (saveBtn) {
+                    saveBtn.click();
+                }
+            }
+        }
+    };
+}
+
+// تشغيل الاختصارات فوراً
+setupShortcuts();
+</script>
+"""
+
+# حقن الاسكريبت مع مفتاح ديناميكي يتغير عند كل عملية حفظ لإجبار المتصفح على الاستجابة
+components.html(js_script, height=0, key="focus_js_ctx_" + str(st.session_state.focus_trigger))
 
 st.divider()
 
@@ -224,3 +280,87 @@ if current_list:
         item_to_modify = st.selectbox("اختر الصنف للتعديل/الحذف:", [i['Name'] for i in current_list])
     with col_edit_qty:
         new_qty_val = st.number_input("الكمية الجديدة:", min_value=0.0, step=1.0, format="%g")
+        
+    with col_edit_btn:
+        if st.button("📝 تحديث الكمية"):
+            for idx, item in enumerate(current_list):
+                if item['Name'] == item_to_modify:
+                    current_list[idx]['Qty'] = str(new_qty_val)
+                    st.success("✅ تم تحديث الكمية!")
+                    st.rerun()
+                    
+    with col_del_btn:
+        if st.button("🗑️ حذف الصنف بالكامل", type="primary"):
+            for idx, item in enumerate(current_list):
+                if item['Name'] == item_to_modify:
+                    current_list.pop(idx)
+                    st.success("❌ تم حذف الصنف من القائمة!")
+                    st.rerun()
+
+    # --- معالجة بناء البيانات للتصدير النهائي لـ SAP ---
+    final_rows = []
+    today = datetime.now()
+    curr_idx = 0
+    last_v = None
+    
+    for it in current_list:
+        if mode == "internal":
+            final_rows.append({
+                'SAP': it['SAP'], 'N1': '', 'N2': '', 'QUTY': it['Qty'], 'UNT': it['Unit'], 'LOC': '1000', 
+                'COST CNTER': it['Plant'], 'ORDER': it['Order'], 'N3': '', 'N4': '', 'N5': '', 'N6': '', 
+                'N7': '', 'MOV TYP': 'ZX1', 'N9': '', 'N10': '', 'PLANT': it['Plant']
+            })
+        elif mode == "damage":
+            final_rows.append({
+                'ITEM': it['SAP'], 'N1': '', 'N2': '', 'QUTY': it['Qty'], 'UON': it['Unit'], 'LOC': '1000', 
+                'PLANT_MAIN': it['Plant'], 'ORDER': it['Order'], 'N3': '', 'N4': '', 'N5': '', 'N6': '', 
+                'N7': '', 'DAMAGE TYPE': 'Z51', 'N11': '', 'N12': '', 'PLANT': it['Plant']
+            })
+        elif mode == "recipe":
+            final_rows.append({
+                'ITEM': it['SAP'], 'N1': '', 'N2': '', 'QUTY': it['Qty'], 'N3': '', 'LOC': '1000', 
+                'N4': '', 'N5': '', 'N6': '', 'MOV': '317', 'N7': '', 'N8': '', 'PLANT': it['Plant']
+            })
+        elif mode == "purchase":
+            if it['Supplier_ID'] != last_v:
+                curr_idx += 1
+                last_v = it['Supplier_ID']
+            try:
+                plant_num = int(it['Plant'])
+                p_grp_val = str(plant_num - 1000) if plant_num > 1000 else '104'
+            except: p_grp_val = '104'
+            
+            final_rows.append({
+                'Indicator': curr_idx, 'Doc Type': 'ZLPO', 'Vendor': it['Supplier_ID'], 'P.Org': '1100', 
+                'P. Grp': p_grp_val, 'Company Code': '1000', 'Doc Date': today.strftime('%d.%m.%Y'), 
+                'Material': it['SAP'], 'Quantity': it['Qty'], 'UOM': it['Unit'], 'Plant': it['Plant'], 
+                'Storage Location': '1000', 'Delivery Date': (today + timedelta(days=2)).strftime('%d.%m.%Y'), 'Return': ''
+            })
+            
+    df_final = pd.DataFrame(final_rows)
+    
+    st.divider()
+    col_dl1, col_dl2 = st.columns(2)
+    
+    with col_dl1:
+        buffer_xlsx = io.BytesIO()
+        with pd.ExcelWriter(buffer_xlsx, engine='openpyxl') as writer:
+            df_final.to_excel(writer, index=False)
+        st.download_button(
+            label="📥 تحميل كملف Excel لـ SAP",
+            data=buffer_xlsx.getvalue(),
+            file_name=f"AliSystem_{mode}_{today.strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    
+    with col_dl2:
+        buffer_txt = io.BytesIO()
+        df_final.to_csv(buffer_txt, sep='\t', index=False)
+        st.download_button(
+            label="📥 تحميل كملف TXT لـ SAP",
+            data=buffer_txt.getvalue(),
+            file_name=f"AliSystem_{mode}_{today.strftime('%Y%m%d')}.txt",
+            mime="text/plain"
+        )
+else:
+    st.info("القائمة الحالية فارغة.")
