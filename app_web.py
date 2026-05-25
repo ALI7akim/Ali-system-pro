@@ -3,24 +3,22 @@ import pandas as pd
 from datetime import datetime, timedelta
 import io
 
-# إعدادات الصفحة لتناسب الهواتف كأنه تطبيق مستقل
+# إعدادات الصفحة لتناسب جميع الشاشات
 st.set_page_config(page_title="ALI SYSTEM PRO", page_icon="📦", layout="centered")
 
-# تصميم CSS احترافي مخصص للهواتف (تكبير الأزرار والخطوط ومريح للعين)
+# تصميم مخصص مريح جداً للعمل السريع واختصارات الكيبورد
 st.markdown("""
     <style>
-    .main .block-container { padding-top: 1rem; padding-bottom: 1rem; padding-left: 0.5rem; padding-right: 0.5rem; }
-    h1 { font-size: 24px !important; text-align: center; color: #1E3A8A; }
-    .stButton>button { width: 100%; border-radius: 10px; height: 3.5em; font-size: 16px; font-weight: bold; background-color: #2563EB; color: white; }
-    div[data-testid="metric-container"] { background-color: #F3F4F6; border: 1px solid #E5E7EB; padding: 8px; border-radius: 10px; text-align: center; }
-    .stRadio>div { justify-content: center; }
-    div[data-baseweb="input"] { border-radius: 8px !important; }
+    .main .block-container { padding-top: 1rem; padding-bottom: 1rem; }
+    h1 { text-align: center; color: #1E3A8A; font-size: 26px !important; }
+    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
+    div[data-testid="metric-container"] { background-color: #f8f9fa; border: 1px solid #e0e0e0; padding: 10px; border-radius: 8px; text-align: center; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📦 ALI SYSTEM PRO Mobile")
+st.title("📦 ALI SYSTEM PRO (Ultimate Web)")
 
-# --- دالات القراءة السريعة المخفوظة (Caching) ---
+# --- دالات القراءة السريعة المحفوظة في الذاكرة (Caching) ---
 @st.cache_data
 def load_master_file(uploaded_file):
     if uploaded_file.name.endswith('x'): df = pd.read_excel(uploaded_file)
@@ -35,7 +33,7 @@ def load_stock_file(uploaded_file):
     plants = sorted(list(set([str(c[0]).strip() for c in df_s.columns if str(c[0]).strip().isdigit()])))
     return df_s, plants
 
-# --- تهيئة الذاكرة المؤقتة (Session State) ---
+# --- تهيئة الذاكرة المؤقتة للجلسة (Session State) ---
 if "scanned_purchase" not in st.session_state: st.session_state.scanned_purchase = []
 if "scanned_internal" not in st.session_state: st.session_state.scanned_internal = []
 if "scanned_damage" not in st.session_state: st.session_state.scanned_damage = []
@@ -43,10 +41,8 @@ if "scanned_recipe" not in st.session_state: st.session_state.scanned_recipe = [
 if "master_df" not in st.session_state: st.session_state.master_df = None
 if "stock_df" not in st.session_state: st.session_state.stock_df = None
 if "plants" not in st.session_state: st.session_state.plants = []
-# متغيرات للتحكم بالمسح التلقائي للإنتاجية والسرعة
-if "search_value" not in st.session_state: st.session_state.search_value = ""
 
-# --- قائمة التحكم الجانبية لرفع الملفات ---
+# --- إدارة رفع الملفات عبر القائمة الجانبية ---
 with st.sidebar:
     st.header("⚙️ إدارة ملفات النظام")
     master_file = st.file_uploader("1️⃣ ملف الباركودات (EXPORT BARCODE)", type=["xlsx", "xls", "csv"])
@@ -65,15 +61,14 @@ with st.sidebar:
         st.session_state.scanned_internal = []
         st.session_state.scanned_damage = []
         st.session_state.scanned_recipe = []
-        st.session_state.search_value = ""
         st.rerun()
 
-# حماية: التنبيه في حال عدم رفع الملفات
+# حماية النظام من العمل دون ملفات
 if st.session_state.master_df is None or st.session_state.stock_df is None:
-    st.warning("⚠️ يرجى رفع ملف الباركودات والمخزون من القائمة الجانبية لبدء العمل.")
+    st.warning("⚠️ يرجى رفع ملف الباركودات وملف المخزون من القائمة الجانبية للبدء.")
     st.stop()
 
-# --- القوائم الثابتة ---
+# --- القوائم والخيارات الثابتة ---
 unit_options = ["AU", "BAG", "BOX", "CAR", "G", "KG", "M", "ML", "PAC", "PC"]
 order_options = {
     "500000 Customer Service": "500000", "500001 Fruit and vegetable": "500001",
@@ -81,43 +76,42 @@ order_options = {
     "500004 Branch Office": "500004"
 }
 
-# --- اختيار القسم الحالي (أزرار كبيرة مناسبة للهاتف) ---
-current_tab = st.radio("القسم الحالي:", ["Purchase Req", "Internal Sale", "Damage Issue", "Recipe Issue"], horizontal=True)
+# --- أقسام العمل (Tabs) ---
+current_tab = st.radio("اختر القسم الحالي للعمل:", ["Purchase Req", "Internal Sale", "Damage Issue", "Recipe Issue"], horizontal=True)
 mode_map = {"Purchase Req": "purchase", "Internal Sale": "internal", "Damage Issue": "damage", "Recipe Issue": "recipe"}
 mode = mode_map[current_tab]
 
-# --- لوحة العدادات الصغيرة ---
+# --- لوحة العدادات (Dashboard) ---
 current_list = getattr(st.session_state, f"scanned_{mode}")
-col_m1, col_m2 = st.columns(2)
-with col_m1: st.metric(label="الأصناف الحالية", value=len(current_list))
-with col_m2:
+col1, col2 = st.columns(2)
+with col1: st.metric(label="عدد الأصناف المضافة", value=len(current_list))
+with col2: 
     if mode == "purchase": st.metric(label="عدد الموردين", value=len(set([i.get('Supplier_ID', '') for i in current_list if i.get('Supplier_ID')])))
     else: st.metric(label="إجمالي الطلبات", value=len(current_list))
 
 st.divider()
 
-# --- إعدادات سريعة ---
+# --- الإعدادات الفورية ---
 col_p, col_d = st.columns(2)
-with col_p: plant_selected = st.selectbox("🏬 الفرع (Plant):", st.session_state.plants)
-with col_d:
+with col_p: plant_selected = st.selectbox("🏬 اختر الفرع (Plant):", st.session_state.plants)
+with col_d: 
     date_val = datetime.now().strftime('%d.%m.%Y')
     if mode == "internal": date_input = st.text_input("📅 التاريخ:", value=date_val)
 
-# طريقة إدخال البحث
+# اختيار طريقة البحث
 modes_list = ["Barcode", "SAP", "Orion"]
 if mode == "damage": modes_list.insert(0, "Short")
-search_mode = st.radio("طريقة البحث والمسح:", modes_list, horizontal=True)
+search_mode = st.radio("طريقة البحث:", modes_list, horizontal=True)
 
-# دالة لتحديث البحث والمسح التلقائي الفوري لتسريع العمل الفعلي
-def handle_search():
-    st.session_state.search_value = st.session_state.search_box_key
+# نماذج الإدخال الذكية لتفعيل الـ Enter التلقائي
+with st.form(key="search_form", clear_on_submit=False):
+    search_input = st.text_input("🔍 امسح الباركود أو اكتب الكود ثم اضغط Enter لجلبه:", key="search_field")
+    submit_search = st.form_submit_button("🔍 جلب الصنف")
 
-# صندوق إدخال الكود الفوري الذكي (يقوم بتشغيل البحث بمجرد التغيير)
-search_input = st.text_input("🔍 امسح الباركود أو اكتب الكود هنا:", key="search_box_key", on_change=handle_search, value=st.session_state.search_value)
-
+# --- منطق البحث الجذري ---
 found_item = None
-if st.session_state.search_value:
-    val = st.session_state.search_value.strip()
+if search_input:
+    val = search_input.strip()
     if search_mode == "Short" and len(val) >= 6: val = val[2:6]
     
     sap_code = None
@@ -141,15 +135,14 @@ if st.session_state.search_value:
             "Factor": str(row['Factor']).split('.')[0], "Unit": str(row['UOM CODE']), "Supplier_ID": str(row['Supplier']).split('.')[0]
         }
         
-        # جلب المخزون والمبيعات
+        # جلب المخزون والمبيعات السابقة
         s_match = st.session_state.stock_df[st.session_state.stock_df.iloc[:, 0].astype(str).str.strip().replace(r'\.0$', '', regex=True) == sap_code]
         live_stock = "-"
         if not s_match.empty:
             p_col = [c for c in st.session_state.stock_df.columns if str(c[0]).strip() == plant_selected]
             if p_col: live_stock = str(s_match.iloc[0][p_col[0]]).split('.')[0]
             
-            # عرض المبيعات السابقة كبطاقات أفقية صغيرة ومريحة لشاشات الهاتف
-            st.markdown("⬇️ **مبيعات الأشهر السابقة**")
+            st.markdown("### 📊 مبيعات الأشهر السابقة:")
             sales_cols = [c for c in st.session_state.stock_df.columns if "Total Sales" in str(c[0])]
             cols_sales = st.columns(len(sales_cols) if sales_cols else 1)
             for i, sc in enumerate(sales_cols):
@@ -157,28 +150,30 @@ if st.session_state.search_value:
                     try: st.metric(label=str(sc[1]).strip(), value=f"{float(s_match.iloc[0][sc]):g}")
                     except: pass
         
-        st.info(f"📦 **{found_item['Name']}**\n\n🔹 **SAP:** {found_item['SAP']}  |  🟢 **Stock:** {live_stock}")
+        st.info(f"**الصنف المختار:** {found_item['Name']} | **SAP:** {found_item['SAP']} | **المخزون الحالي:** {live_stock}")
     else:
         st.error("❌ الصنف غير موجود، تحقق من طريقة البحث!")
 
-# --- إدخال الكمية والحفظ التلقائي المريح ---
+# --- نموذج الكمية الذكي (يغلق ويحفظ بـ Enter) ---
 if found_item:
-    col_u, col_q = st.columns(2)
-    with col_u: unit_selected = st.selectbox("📦 الوحدة:", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
-    with col_q: qty_input = st.number_input("🔢 الكمية:", min_value=0.0, step=1.0, format="%g")
-    
-    order_selected = None
-    if mode in ["internal", "damage", "recipe"]:
-        order_key = st.selectbox("🎯 Order Group:", list(order_options.keys()))
-        order_selected = order_options[order_key]
+    with st.form(key="qty_form", clear_on_submit=True):
+        unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
+        qty_input = st.number_input("🔢 اكتب الكمية ثم اضغط Enter للحفظ التلقائي:", min_value=0.0, step=1.0, format="%g", key="focus_qty")
         
-    if st.button("➕ حفظ الصنف وتجهيز القادم"):
-        if qty_input > 0:
+        order_selected = None
+        if mode in ["internal", "damage", "recipe"]:
+            order_key = st.selectbox("🎯 اختر الـ Order Group:", list(order_options.keys()))
+            order_selected = order_options[order_key]
+            
+        submit_qty = st.form_submit_button("➕ حفظ الصنف إلى القائمة")
+        
+        if submit_qty and qty_input > 0:
             duplicate = False
             for idx, ex in enumerate(current_list):
                 if ex['SAP'] == found_item['SAP']:
                     current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_input)
                     duplicate = True
+                    st.success("🔄 تم دمج الكمية بنجاح!")
                     break
             
             if not duplicate:
@@ -189,19 +184,43 @@ if found_item:
                 if order_selected: new_row["Order"] = order_selected
                 if mode == "internal": new_row["Date"] = date_input
                 current_list.append(new_row)
-            
-            # ⚡ السر المريح: تفريغ صندوق البحث فوراً ليكون جاهزاً للصنف التالي دون لمس الهاتف
-            st.session_state.search_value = ""
+                st.success(f"✅ تم إضافة الصنف!")
             st.rerun()
 
 st.divider()
 
-# --- استعراض وتصدير القوائم للأندرويد ---
-st.subheader(f"📋 معاينة ({current_tab})")
+# --- لوحة استعراض الجدول والتعديل والحذف 🗑️ ---
+st.subheader(f"📋 معاينة وتعديل قائمة ({current_tab})")
 if current_list:
-    df_preview = pd.DataFrame(current_list)[['Name', 'SAP', 'Qty', 'Unit']]
-    st.dataframe(df_preview, use_container_width=True, hide_index=True)
+    df_preview = pd.DataFrame(current_list)
+    st.dataframe(df_preview[['Name', 'SAP', 'Qty', 'Unit']], use_container_width=True)
     
+    # قسم التعديل والحذف السريع المخصص
+    st.markdown("### 🛠️ لوحة التحكم في الأصناف المضافة:")
+    col_edit_item, col_edit_qty, col_edit_btn, col_del_btn = st.columns([3, 2, 2, 2])
+    
+    with col_edit_item:
+        item_to_modify = st.selectbox("اختر الصنف للتعديل/الحذف:", [i['Name'] for i in current_list])
+    with col_edit_qty:
+        new_qty_val = st.number_input("الكمية الجديدة:", min_value=0.0, step=1.0, format="%g")
+        
+    with col_edit_btn:
+        if st.button("📝 تحديث الكمية"):
+            for idx, item in enumerate(current_list):
+                if item['Name'] == item_to_modify:
+                    current_list[idx]['Qty'] = str(new_qty_val)
+                    st.success("✅ تم تحديث الكمية!")
+                    st.rerun()
+                    
+    with col_del_btn:
+        if st.button("🗑️ حذف الصنف بالكامل", type="primary"):
+            for idx, item in enumerate(current_list):
+                if item['Name'] == item_to_modify:
+                    current_list.pop(idx)
+                    st.success("❌ تم حذف الصنف من القائمة!")
+                    st.rerun()
+
+    # --- معالجة بناء البيانات للتصدير النهائي ---
     final_rows = []
     today = datetime.now()
     curr_idx = 0
@@ -243,16 +262,30 @@ if current_list:
             
     df_final = pd.DataFrame(final_rows)
     
-    # تحويل فوري للتحميل المباشر بضغطة زر على الأندرويد
-    buffer_xlsx = io.BytesIO()
-    with pd.ExcelWriter(buffer_xlsx, engine='openpyxl') as writer:
-        df_final.to_excel(writer, index=False)
+    st.divider()
+    col_dl1, col_dl2 = st.columns(2)
     
-    st.download_button(
-        label="📥 تحميل ملف Excel النهائي",
-        data=buffer_xlsx.getvalue(),
-        file_name=f"AliSystem_{mode}_{today.strftime('%Y%m%d')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    # زر تصدير الإكسل
+    with col_dl1:
+        buffer_xlsx = io.BytesIO()
+        with pd.ExcelWriter(buffer_xlsx, engine='openpyxl') as writer:
+            df_final.to_excel(writer, index=False)
+        st.download_button(
+            label="📥 تحميل كملف Excel لـ SAP",
+            data=buffer_xlsx.getvalue(),
+            file_name=f"AliSystem_{mode}_{today.strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    
+    # زر تصدير التكست (الذي تمت إعادته بناءً على طلبك ✨)
+    with col_dl2:
+        buffer_txt = io.BytesIO()
+        df_final.to_csv(buffer_txt, sep='\t', index=False)
+        st.download_button(
+            label="📥 تحميل كملف TXT لـ SAP",
+            data=buffer_txt.getvalue(),
+            file_name=f"AliSystem_{mode}_{today.strftime('%Y%m%d')}.txt",
+            mime="text/plain"
+        )
 else:
-    st.info("القائمة فارغة حالياً.")
+    st.info("القائمة الحالية فارغة.")
