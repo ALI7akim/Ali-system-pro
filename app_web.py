@@ -108,7 +108,7 @@ modes_list = ["Barcode", "SAP", "Orion"]
 if mode == "damage": modes_list.insert(0, "Short")
 search_mode = st.radio("طريقة البحث:", modes_list, horizontal=True)
 
-# حقل إدخال الباركود
+# حقل إدخال الباركود الأساسي
 search_input = st.text_input("🔍 امسح الباركود أو اكتب الكود:", key="search_field")
 
 # --- منطق البحث الجذري ---
@@ -145,7 +145,7 @@ if search_input:
             p_col = [c for c in st.session_state.stock_df.columns if str(c[0]).strip() == plant_selected]
             if p_col: live_stock = str(s_match.iloc[0][p_col[0]]).split('.')[0]
             
-            # قسم المبيعات السابقة بحجم الخط المصغر الجديد والناعم
+            # قسم المبيعات السابقة بحجم الخط المصغر
             st.markdown("<p style='font-size:13px; font-weight:bold; margin-bottom:5px;'>📊 مبيعات الأشهر السابقة:</p>", unsafe_allow_html=True)
             sales_cols = [c for c in st.session_state.stock_df.columns if "Total Sales" in str(c[0])]
             cols_sales = st.columns(len(sales_cols) if sales_cols else 1)
@@ -158,11 +158,13 @@ if search_input:
     else:
         st.error("❌ الصنف غير موجود، تحقق من طريقة البحث!")
 
-# --- نموذج الكمية المحمي (Form) لضمان الاستجابة لـ Enter بنسبة 100% ---
+# --- نموذج الكمية المحسّن الكلي كـ Form نصي لضمان عمل Enter بنسبة 100% ---
 if found_item:
     with st.form(key="final_qty_form", clear_on_submit=True):
         unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
-        qty_input = st.number_input("🔢 اكتب الكمية واضغط Enter للحفظ المباشر:", min_value=0.0, step=1.0, format="%g", key="qty_field")
+        
+        # استبدال الحقل بـ text_input لكي يستجيب لـ Enter إجبارياً في المتصفح
+        qty_input_raw = st.text_input("🔢 اكتب الكمية واضغط Enter للحفظ المباشر:", value="1", key="qty_field")
         
         order_selected = None
         if mode in ["internal", "damage", "recipe"]:
@@ -171,27 +173,33 @@ if found_item:
             
         submit_qty = st.form_submit_button("➕ حفظ الصنف إلى القائمة")
         
-        if submit_qty and qty_input > 0:
-            duplicate = False
-            for idx, ex in enumerate(current_list):
-                if ex['SAP'] == found_item['SAP']:
-                    current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_input)
-                    duplicate = True
-                    break
-            
-            if not duplicate:
-                new_row = {
-                    "SAP": found_item['SAP'], "Unit": unit_selected, "Qty": str(qty_input),
-                    "Plant": plant_selected, "Supplier_ID": found_item['Supplier_ID'], "Name": found_item['Name']
-                }
-                if order_selected: new_row["Order"] = order_selected
-                if mode == "internal": new_row["Date"] = date_input
-                current_list.append(new_row)
-            
-            st.success("✅ تم حفظ الصنف!")
-            st.rerun()
+        if submit_qty:
+            try:
+                qty_input = float(qty_input_raw.strip())
+            except ValueError:
+                qty_input = 0.0
+                
+            if qty_input > 0:
+                duplicate = False
+                for idx, ex in enumerate(current_list):
+                    if ex['SAP'] == found_item['SAP']:
+                        current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_input)
+                        duplicate = True
+                        break
+                
+                if not duplicate:
+                    new_row = {
+                        "SAP": found_item['SAP'], "Unit": unit_selected, "Qty": str(qty_input),
+                        "Plant": plant_selected, "Supplier_ID": found_item['Supplier_ID'], "Name": found_item['Name']
+                    }
+                    if order_selected: new_row["Order"] = order_selected
+                    if mode == "internal": new_row["Date"] = date_input
+                    current_list.append(new_row)
+                
+                st.success("✅ تم حفظ الصنف!")
+                st.rerun()
 
-# --- ⚡ سكريبت توجيه الـ Enter والحفظ التلقائي الذكي والنهائي ⚡ ---
+# --- ⚡ سكريبت توجيه الـ Enter المتوافق تماماً مع الحقول النصية ⚡ ---
 components.html(
     """
     <script>
@@ -201,7 +209,7 @@ components.html(
         if (e.key === 'Enter') {
             const activeEl = doc.activeElement;
             
-            // 1. عند الضغط على Enter في حقل الباركود -> انتقل فوراً لحقل الكمية
+            // 1. عند الضغط على Enter في حقل الباركود -> انتقال فوري للكمية
             if (activeEl && activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('امسح الباركود')) {
                 setTimeout(() => {
                     const qtyField = doc.querySelector('input[aria-label*="اكتب الكمية"]');
@@ -212,9 +220,8 @@ components.html(
                 }, 300);
             }
             
-            // 2. عند الضغط على Enter في حقل الكمية -> اضغط زر الإرسال والحفظ داخل الـ Form تلقائياً
+            // 2. عند الضغط على Enter في حقل الكمية النصي الجديد -> ضغط زر الحفظ تلقائياً
             if (activeEl && activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('اكتب الكمية')) {
-                // منع التحديث العشوائي وتنفيذ إرسال النموذج (Submit) الخاص بالكمية فوراً
                 const formSubmitBtn = doc.querySelector('button[data-testid="stFormSubmitButton"]');
                 if (formSubmitBtn) {
                     formSubmitBtn.click();
@@ -235,7 +242,6 @@ if current_list:
     df_preview = pd.DataFrame(current_list)
     st.dataframe(df_preview[['Name', 'SAP', 'Qty', 'Unit']], use_container_width=True)
     
-    # قسم التعديل والحذف السريع المخصص
     st.markdown("### 🛠️ لوحة التحكم في الأصناف المضافة:")
     col_edit_item, col_edit_qty, col_edit_btn, col_del_btn = st.columns([3, 2, 2, 2])
     
