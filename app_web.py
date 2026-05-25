@@ -158,12 +158,11 @@ if search_input:
     else:
         st.error("❌ الصنف غير موجود، تحقق من طريقة البحث!")
 
-# --- نموذج الكمية المحسّن الكلي كـ Form نصي لضمان عمل Enter بنسبة 100% ---
+# --- نموذج الكمية المحسّن كـ Form نصي ---
 if found_item:
     with st.form(key="final_qty_form", clear_on_submit=True):
         unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
         
-        # استبدال الحقل بـ text_input لكي يستجيب لـ Enter إجبارياً في المتصفح
         qty_input_raw = st.text_input("🔢 اكتب الكمية واضغط Enter للحفظ المباشر:", value="1", key="qty_field")
         
         order_selected = None
@@ -174,10 +173,8 @@ if found_item:
         submit_qty = st.form_submit_button("➕ حفظ الصنف إلى القائمة")
         
         if submit_qty:
-            try:
-                qty_input = float(qty_input_raw.strip())
-            except ValueError:
-                qty_input = 0.0
+            try: qty_input = float(qty_input_raw.strip())
+            except ValueError: qty_input = 0.0
                 
             if qty_input > 0:
                 duplicate = False
@@ -199,12 +196,26 @@ if found_item:
                 st.success("✅ تم حفظ الصنف!")
                 st.rerun()
 
-# --- ⚡ سكريبت توجيه الـ Enter المتوافق تماماً مع الحقول النصية ⚡ ---
+# --- ⚡ سكريبت الجافا سكريبت الاحترافي لإرجاع الفوكس تلقائياً للباركود ⚡ ---
 components.html(
     """
     <script>
     const doc = window.parent.document;
     
+    // دالة للتركيز التلقائي على حقل الباركود عند بداية التشغيل أو بعد الحفظ
+    function focusBarcode() {
+        setTimeout(() => {
+            const barcodeField = doc.querySelector('input[aria-label*="امسح الباركود"]');
+            if (barcodeField) {
+                barcodeField.focus();
+                barcodeField.select();
+            }
+        }, 400);
+    }
+    
+    // تشغيل الفوكس التلقائي فور تحميل الصفحة
+    focusBarcode();
+
     doc.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') {
             const activeEl = doc.activeElement;
@@ -220,11 +231,12 @@ components.html(
                 }, 300);
             }
             
-            // 2. عند الضغط على Enter في حقل الكمية النصي الجديد -> ضغط زر الحفظ تلقائياً
+            // 2. عند الضغط على Enter في حقل الكمية -> حفظ ثم إعادة الفوكس للباركود تلقائياً
             if (activeEl && activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('اكتب الكمية')) {
                 const formSubmitBtn = doc.querySelector('button[data-testid="stFormSubmitButton"]');
                 if (formSubmitBtn) {
                     formSubmitBtn.click();
+                    focusBarcode(); // إعادة المؤشر للباركود مباشرة بعد الضغط والحفظ
                 }
             }
         }
