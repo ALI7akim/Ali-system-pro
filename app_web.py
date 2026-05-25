@@ -7,13 +7,17 @@ import streamlit.components.v1 as components
 # إعدادات الصفحة لتناسب جميع الشاشات
 st.set_page_config(page_title="ALI SYSTEM PRO", page_icon="📦", layout="centered")
 
-# تصميم مخصص مريح جداً للعمل السريع واختصارات الكيبورد
+# تصميم مخصص مريح جداً وتصغير خط المبيعات والأزرار
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1rem; padding-bottom: 1rem; }
     h1 { text-align: center; color: #1E3A8A; font-size: 26px !important; }
     .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
-    div[data-testid="metric-container"] { background-color: #f8f9fa; border: 1px solid #e0e0e0; padding: 10px; border-radius: 8px; text-align: center; }
+    
+    /* تصغير خط وحجم بطاقات مبيعات الأشهر السابقة */
+    div[data-testid="stMetricValue"] { font-size: 16px !important; font-weight: bold !important; }
+    div[data-testid="stMetricLabel"] { font-size: 11px !important; color: #555555 !important; }
+    div[data-testid="metric-container"] { background-color: #f8f9fa; border: 1px solid #e2e8f0; padding: 6px 10px; border-radius: 6px; text-align: center; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -104,7 +108,7 @@ modes_list = ["Barcode", "SAP", "Orion"]
 if mode == "damage": modes_list.insert(0, "Short")
 search_mode = st.radio("طريقة البحث:", modes_list, horizontal=True)
 
-# صندوق إدخال الباركود الأساسي
+# حقل إدخال الباركود
 search_input = st.text_input("🔍 امسح الباركود أو اكتب الكود:", key="search_field")
 
 # --- منطق البحث الجذري ---
@@ -141,7 +145,8 @@ if search_input:
             p_col = [c for c in st.session_state.stock_df.columns if str(c[0]).strip() == plant_selected]
             if p_col: live_stock = str(s_match.iloc[0][p_col[0]]).split('.')[0]
             
-            st.markdown("### 📊 مبيعات الأشهر السابقة:")
+            # قسم المبيعات السابقة بحجم الخط المصغر الجديد والناعم
+            st.markdown("<p style='font-size:13px; font-weight:bold; margin-bottom:5px;'>📊 مبيعات الأشهر السابقة:</p>", unsafe_allow_html=True)
             sales_cols = [c for c in st.session_state.stock_df.columns if "Total Sales" in str(c[0])]
             cols_sales = st.columns(len(sales_cols) if sales_cols else 1)
             for i, sc in enumerate(sales_cols):
@@ -153,52 +158,50 @@ if search_input:
     else:
         st.error("❌ الصنف غير موجود، تحقق من طريقة البحث!")
 
-# --- نموذج الكمية بعد الإصلاح الجذري لمعادلة الخطأ ---
+# --- نموذج الكمية المحمي (Form) لضمان الاستجابة لـ Enter بنسبة 100% ---
 if found_item:
-    unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
-    qty_input = st.number_input("🔢 اكتب الكمية:", min_value=0.0, step=1.0, format="%g", key="qty_field")
-    
-    order_selected = None
-    if mode in ["internal", "damage", "recipe"]:
-        order_key = st.selectbox("🎯 اختر الـ Order Group:", list(order_options.keys()))
-        order_selected = order_options[order_key]
+    with st.form(key="final_qty_form", clear_on_submit=True):
+        unit_selected = st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(found_item['Unit']) if found_item['Unit'] in unit_options else 0)
+        qty_input = st.number_input("🔢 اكتب الكمية واضغط Enter للحفظ المباشر:", min_value=0.0, step=1.0, format="%g", key="qty_field")
         
-    submit_qty = st.button("➕ حفظ الصنف إلى القائمة", key="save_btn")
-    
-    # إصلاح شرط الحفظ ليعمل يدوياً أو عبر اختصار الجافا سكريبت بدون أخطاء حمراء
-    if qty_input > 0 and submit_qty:
-        duplicate = False
-        for idx, ex in enumerate(current_list):
-            if ex['SAP'] == found_item['SAP']:
-                current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_input)
-                duplicate = True
-                break
+        order_selected = None
+        if mode in ["internal", "damage", "recipe"]:
+            order_key = st.selectbox("🎯 اختر الـ Order Group:", list(order_options.keys()))
+            order_selected = order_options[order_key]
+            
+        submit_qty = st.form_submit_button("➕ حفظ الصنف إلى القائمة")
         
-        if not duplicate:
-            new_row = {
-                "SAP": found_item['SAP'], "Unit": unit_selected, "Qty": str(qty_input),
-                "Plant": plant_selected, "Supplier_ID": found_item['Supplier_ID'], "Name": found_item['Name']
-            }
-            if order_selected: new_row["Order"] = order_selected
-            if mode == "internal": new_row["Date"] = date_input
-            current_list.append(new_row)
-        
-        st.success("✅ تم حفظ الصنف بنجاح!")
-        st.rerun()
+        if submit_qty and qty_input > 0:
+            duplicate = False
+            for idx, ex in enumerate(current_list):
+                if ex['SAP'] == found_item['SAP']:
+                    current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_input)
+                    duplicate = True
+                    break
+            
+            if not duplicate:
+                new_row = {
+                    "SAP": found_item['SAP'], "Unit": unit_selected, "Qty": str(qty_input),
+                    "Plant": plant_selected, "Supplier_ID": found_item['Supplier_ID'], "Name": found_item['Name']
+                }
+                if order_selected: new_row["Order"] = order_selected
+                if mode == "internal": new_row["Date"] = date_input
+                current_list.append(new_row)
+            
+            st.success("✅ تم حفظ الصنف!")
+            st.rerun()
 
-# --- ⚡ كود الجافا سكريبت المطور كلياً لإدارة مفتاح Enter بالملي ثانية ⚡ ---
+# --- ⚡ سكريبت توجيه الـ Enter والحفظ التلقائي الذكي والنهائي ⚡ ---
 components.html(
     """
     <script>
     const doc = window.parent.document;
     
-    // دالة لتنفيذ العمليات عند ضغط Enter في الحقول
     doc.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') {
-            // البحث عن العنصر النشط حالياً
             const activeEl = doc.activeElement;
             
-            // 1. إذا كان المستخدم في خانة الباركود وضغط Enter
+            // 1. عند الضغط على Enter في حقل الباركود -> انتقل فوراً لحقل الكمية
             if (activeEl && activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('امسح الباركود')) {
                 setTimeout(() => {
                     const qtyField = doc.querySelector('input[aria-label*="اكتب الكمية"]');
@@ -209,14 +212,12 @@ components.html(
                 }, 300);
             }
             
-            // 2. إذا كان المستخدم في خانة الكمية وضغط Enter
+            // 2. عند الضغط على Enter في حقل الكمية -> اضغط زر الإرسال والحفظ داخل الـ Form تلقائياً
             if (activeEl && activeEl.getAttribute('aria-label') && activeEl.getAttribute('aria-label').includes('اكتب الكمية')) {
-                e.preventDefault();
-                e.stopPropagation();
-                // البحث عن زر الحفظ والضغط عليه برمجياً
-                const saveBtn = Array.from(doc.querySelectorAll('button')).find(el => el.textContent.includes('حفظ الصنف إلى القائمة'));
-                if (saveBtn) {
-                    saveBtn.click();
+                // منع التحديث العشوائي وتنفيذ إرسال النموذج (Submit) الخاص بالكمية فوراً
+                const formSubmitBtn = doc.querySelector('button[data-testid="stFormSubmitButton"]');
+                if (formSubmitBtn) {
+                    formSubmitBtn.click();
                 }
             }
         }
