@@ -96,7 +96,7 @@ order_options = {
 }
 
 # ==============================================================================
-# 🚪 الصفحة الأولى: اختيار الإعدادات والفرع والقسم
+# 🏢 الصفحة الأولى: اختيار الإعدادات والفرع والقسم
 # ==============================================================================
 if st.session_state.app_page == "setup":
     st.markdown('<div class="group-box"><div class="group-title">🏢 خطوة 1: تحديد وجهة العمل والفرع</div>', unsafe_allow_html=True)
@@ -119,7 +119,7 @@ if st.session_state.app_page == "setup":
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
-# 🔍 الصفحة الثانية: شاشة المسح الفوري والجرد الذكي والتلقائي
+# 🔍 الصفحة الثانية: شاشة المسح الفوري والتنقل الآلي
 # ==============================================================================
 elif st.session_state.app_page == "scan":
     mode = {"Purchase Req": "purchase", "Internal Sale": "internal", "Damage Issue": "damage", "Recipe Issue": "recipe"}[st.session_state.selected_tab]
@@ -140,10 +140,12 @@ elif st.session_state.app_page == "scan":
     if mode == "damage": modes_list.insert(0, "Short")
     search_mode = st.radio("طريقة البحث المعتمدة الحالية:", modes_list, horizontal=True)
 
-    # دالة معالجة البحث المباشر فور قراءة الباركود
+    # دالة معالجة البحث المباشر فور قراءة الباركود الرقمي
     def on_barcode_change():
-        raw_val = st.session_state[f"barcode_input_{st.session_state.barcode_key}"].strip()
-        if not raw_val: return
+        input_key = f"barcode_input_{st.session_state.barcode_key}"
+        # التأكد من قراءة القيمة كـ string حتى لو كان الحقل عددي
+        raw_val = str(st.session_state[input_key]).strip()
+        if not raw_val or raw_val == "0" or raw_val == "None": return
         
         if search_mode == "Short" and len(raw_val) >= 6: raw_val = raw_val[2:6]
         sap_code = None
@@ -168,13 +170,19 @@ elif st.session_state.app_page == "scan":
                 "Factor": str(row['Factor']).split('.')[0], "Unit": str(row['UOM CODE']), "Supplier_ID": str(row['Supplier']).split('.')[0]
             }
         else:
+            st.sidebar.error("⚠️ الصنف غير مسجل في قاعدة البيانات!")
             st.session_state.active_item = None
 
-    # حقل الإدخال الرئيسي للباركود
-    st.text_input("🔍 امسح الباركود أو اكتب الكود هنا واضغط Enter:", key=f"barcode_input_{st.session_state.barcode_key}", on_change=on_barcode_change)
+    # 🌟 تعديل 1: إذا لم يكن هناك صنف نشط، تظهر خانة الباركود المخصصة للأرقام فقط
+    if st.session_state.active_item is None:
+        st.number_input("🔍 امسح الباركود أو اكتب الكود (أرقام فقط) واضغط Enter:", 
+                        min_value=0, value=0, step=1, format="%d",
+                        key=f"barcode_input_{st.session_state.barcode_key}", 
+                        on_change=on_barcode_change)
+    
+    st.markdown('<div class="group-box"><div class="group-title">📋 تفاصيل ومتابعة الجرد الحالي</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="group-box"><div class="group-title">📋 تفاصيل الصنف المقروء حالياً</div>', unsafe_allow_html=True)
-
+    # 🌟 تعديل 2: إذا تم التعرف على الصنف، تختفي خانة الباركود وتفتح خانة الكمية مباشرة وتأخذ التركيز
     if st.session_state.active_item:
         item = st.session_state.active_item
         s_match = st.session_state.stock_df[st.session_state.stock_df.iloc[:, 0].astype(str).str.strip().replace(r'\.0$', '', regex=True) == item['SAP']]
@@ -198,9 +206,8 @@ elif st.session_state.app_page == "scan":
 
         st.markdown(f"""
             <p class="computer-label">SAP Code:</p><div style="background-color: white; border: 1px solid #aaa; padding: 6px; font-family: monospace; font-size: 14px; margin-bottom: 8px;">{item['SAP']}</div>
-            <p class="computer-label">Description (اسم الصنف كاملاً):</p><div style="background-color: white; border: 1px solid #aaa; padding: 6px; font-size: 14px; margin-bottom: 8px; font-weight: bold; color: #111;">{item['Name']}</div>
-            <p class="computer-label">Live Stock (مخزون الفرع الحالي):</p><div style="background-color: white; border: 1px solid #aaa; padding: 6px; font-size: 13px; margin-bottom: 8px; font-weight: bold; color: #007acc;">{live_stock}</div>
-            <p class="computer-label">Sales History (المبيعات):</p><div style="background-color: #fcf8e3; border: 1px solid #fbeed5; padding: 6px; font-size: 12px; margin-bottom: 8px; color: #c09853;">{sales_info}</div>
+            <p class="computer-label">Description:</p><div style="background-color: white; border: 1px solid #aaa; padding: 6px; font-size: 14px; margin-bottom: 8px; font-weight: bold; color: #111;">{item['Name']}</div>
+            <p class="computer-label">Live Stock:</p><div style="background-color: white; border: 1px solid #aaa; padding: 6px; font-size: 13px; margin-bottom: 8px; font-weight: bold; color: #007acc;">{live_stock}</div>
         """, unsafe_allow_html=True)
         
         col_f1, col_f2 = st.columns(2)
@@ -212,31 +219,31 @@ elif st.session_state.app_page == "scan":
             else:
                 st.text_input("تاريخ اليوم لجلسة العمل:", value=datetime.now().strftime('%d.%m.%Y'), disabled=True)
                 
-        # 🌟 تعديل 1 و 2: الخانة الآن تقبل الكسور العشرية (مثل 0.5) وتأخذ التركيز مباشرة بعد الباركود
-        qty_input = st.number_input("اكتب كمية الجرد الحالية واضغط Enter لحفظها ومسح الشاشة:", min_value=0.001, value=1.0, step=0.001, format="%g")
+        # خانة الكمية مجهزة ومفتوحة تلقائياً لاستقبال القيمة العشرية الكسرية وضغط Enter مباشرة
+        qty_input = st.number_input("✏️ اكتب الكمية المطلوبة الحالية (تقبل أرقام عشرية مثل 0.5) واضغط Enter للحفظ السريع:", 
+                                    min_value=0.0, value=0.0, step=0.001, format="%g")
 
-        # عند الضغط على Enter داخل حقل الكمية، سيتم تفعيل الحفظ ومسح الشاشة تلقائياً
         col_btn1, col_btn2 = st.columns([3, 1])
         with col_btn1:
-            if st.button("💾 حفظ الصنف إلى القائمة (Enter)", type="primary", use_container_width=True) or qty_input != 1.0:
-                duplicate = False
-                for idx, ex in enumerate(current_list):
-                    if ex['SAP'] == item['SAP']:
-                        current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_input)
-                        duplicate = True
-                        break
-                if not duplicate:
-                    new_row = {
-                        "SAP": item['SAP'], "Unit": u_sel, "Qty": str(qty_input),
-                        "Plant": st.session_state.selected_plant, "Supplier_ID": item['Supplier_ID'], "Name": item['Name']
-                    }
-                    if mode in ["internal", "damage", "recipe"]: new_row["Order"] = order_options.get(o_sel)
-                    current_list.append(new_row)
-                    
-                # 🌟 تعديل 3: مسح وتصفير الشاشة بالكامل للعودة إلى الوضع السابق وجاهزية المسحة القادمة
+            # الحفظ يتم إذا ضغط الزر أو إذا أدخل كمية وضغط Enter
+            if st.button("💾 حفظ الصنف إلى القائمة (Enter)", type="primary", use_container_width=True) or qty_input > 0:
+                if qty_input > 0:
+                    duplicate = False
+                    for idx, ex in enumerate(current_list):
+                        if ex['SAP'] == item['SAP']:
+                            current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_input)
+                            duplicate = True
+                            break
+                    if not duplicate:
+                        new_row = {
+                            "SAP": item['SAP'], "Unit": u_sel, "Qty": str(qty_input),
+                            "Plant": st.session_state.selected_plant, "Supplier_ID": item['Supplier_ID'], "Name": item['Name']
+                        }
+                        if mode in ["internal", "damage", "recipe"]: new_row["Order"] = order_options.get(o_sel)
+                        current_list.append(new_row)
+                        
                 st.session_state.active_item = None
                 st.session_state.barcode_key += 1
-                st.success("✅ تم حفظ الكمية بنجاح ومسح الواجهة")
                 st.rerun()
                 
         with col_btn2:
@@ -250,15 +257,43 @@ elif st.session_state.app_page == "scan":
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ==============================================================================
-    # 📊 تعديل 4: جعل لوحة المراجعة والمعاينة خياراً اختيارياً (Checkbox)
+    # 📊 لوحة المعاينة الذكية (تعديل وحذف صنف معين)
     # ==============================================================================
     if current_list:
         st.write("")
-        # زر الاختيار الذكي لمشاهدة الجدول وقتما تشاء
         show_preview = st.checkbox("👁️ فتح لوحة مراجعة ومعاينة القائمة الإجمالية والتصدير كـ Excel / TXT", value=False)
         
         if show_preview:
             st.markdown('<div class="group-box"><div class="group-title">📊 لوحة مراجعة ومعاينة القائمة الإجمالية</div>', unsafe_allow_html=True)
+            
+            # 🌟 تعديل 3: ميزة حذف وتعديل أيتم معين مباشرة من شاشة المعاينة
+            st.write("✏️ **تعديل الكميات أو حذف عناصر محددة من قائمة الجرد الحالية:**")
+            
+            updated_list = []
+            for idx, entry in enumerate(current_list):
+                col_i1, col_i2, col_i3, col_i4 = st.columns([3, 1.5, 1.5, 1])
+                with col_i1:
+                    st.markdown(f"<div style='padding-top:5px; font-size:13px;'><b>{entry['Name']}</b><br><small style='color:#666;'>SAP: {entry['SAP']}</small></div>", unsafe_allow_html=True)
+                with col_i2:
+                    # تعديل الكمية مباشرة لكل صنف بشكل مستقل يدعم الكسور العشرية
+                    new_qty = st.number_input(f"الكمية", min_value=0.001, value=float(entry['Qty']), step=0.001, format="%g", key=f"edit_qty_{idx}")
+                    entry['Qty'] = str(new_qty)
+                with col_i3:
+                    st.markdown(f"<div style='padding-top:28px; text-align:center; font-weight:bold; color:#007acc;'>{entry['Unit']}</div>", unsafe_allow_html=True)
+                with col_i4:
+                    st.write("")
+                    st.write("")
+                    # زر الحذف الفردي لكل صنف
+                    if st.button("❌", key=f"del_{idx}", help="حذف هذا الصنف تماماً"):
+                        current_list.pop(idx)
+                        setattr(st.session_state, f"scanned_{mode}", current_list)
+                        st.rerun()
+                updated_list.append(entry)
+            
+            # حفظ التحديثات الإجمالية للكميات المعدلة
+            setattr(st.session_state, f"scanned_{mode}", updated_list)
+            
+            st.divider()
             
             c_m1, c_m2, c_m3 = st.columns(3)
             with c_m1:
@@ -273,10 +308,7 @@ elif st.session_state.app_page == "scan":
                     st.markdown('<div class="metric-orange"><div class="metric-title">عدد الموردين</div><div class="metric-value">-</div></div>', unsafe_allow_html=True)
             
             st.write("")
-            df_preview = pd.DataFrame(current_list)
-            st.dataframe(df_preview[['Name', 'SAP', 'Qty', 'Unit']], use_container_width=True)
-            
-            if st.button("🗑️ مسح محتويات الجدول بالكامل وإعادة البدء", type="secondary"):
+            if st.button("🗑️ مسح محتويات الجدول بالكامل وإعادة البدء", type="secondary", use_container_width=True):
                 setattr(st.session_state, f"scanned_{mode}", [])
                 st.session_state.active_item = None
                 st.rerun()
