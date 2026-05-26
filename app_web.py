@@ -6,17 +6,27 @@ import io
 # إعدادات الصفحة لتناسب جميع الشاشات
 st.set_page_config(page_title="ALI SYSTEM PRO", page_icon="📦", layout="centered")
 
-# تصميم مخصص مريح جداً وتصغير خط المبيعات والأزرار
+# تصميم مخصص مريح جداً وتصغير خط المبيعات والأزرار وعرض البطاقات بشكل احترافي
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1rem; padding-bottom: 1rem; }
     h1 { text-align: center; color: #1E3A8A; font-size: 26px !important; }
     .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
     
+    /* تصميم بطاقات عرض معلومات الصنف الحالي */
+    .item-card {
+        background-color: #eff6ff;
+        border: 1px solid #bfdbfe;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        color: #1e3a8a;
+    }
+    
     /* تصغير خط وحجم بطاقات مبيعات الأشهر السابقة */
-    div[data-testid="stMetricValue"] { font-size: 16px !important; font-weight: bold !important; }
-    div[data-testid="stMetricLabel"] { font-size: 11px !important; color: #555555 !important; }
-    div[data-testid="metric-container"] { background-color: #f8f9fa; border: 1px solid #e2e8f0; padding: 6px 10px; border-radius: 6px; text-align: center; }
+    div[data-testid="stMetricValue"] { font-size: 18px !important; font-weight: bold !important; color: #0f172a !important; }
+    div[data-testid="stMetricLabel"] { font-size: 12px !important; color: #475569 !important; }
+    div[data-testid="metric-container"] { background-color: #f8f9fa; border: 1px solid #e2e8f0; padding: 8px 12px; border-radius: 6px; text-align: center; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -176,7 +186,7 @@ def handle_quantity_entry():
             if mode == "internal": new_row["Date"] = date_input
             current_list.append(new_row)
             
-        # تفريغ البيانات تماماً والعودة فوراً لحقل الباركود المفتوح للعملية التالية
+        # تفريغ البيانات تماماً والعودة لحقل الباركود
         st.session_state.active_item = None
         st.session_state.search_input_val = ""
         st.session_state.qty_input_val = "1"
@@ -189,20 +199,39 @@ st.text_input("🔍 امسح الباركود أو اكتب الكود هنا و
 if st.session_state.active_item:
     item = st.session_state.active_item
     s_match = st.session_state.stock_df[st.session_state.stock_df.iloc[:, 0].astype(str).str.strip().replace(r'\.0$', '', regex=True) == item['SAP']]
+    
     live_stock = "-"
     if not s_match.empty:
         p_col = [c for c in st.session_state.stock_df.columns if str(c[0]).strip() == plant_selected]
         if p_col: live_stock = str(s_match.iloc[0][p_col[0]]).split('.')[0]
-        
-        st.markdown("<p style='font-size:13px; font-weight:bold; margin-bottom:5px;'>📊 مبيعات الأشهر السابقة:</p>", unsafe_allow_html=True)
+    
+    # 🌟 أولاً: عرض معلومات الصنف الحالي بشكل بارز جداً ومنظم بأعلى الشاشة
+    st.markdown("### 📦 بيانات الصنف الحالي")
+    c_info1, c_info2, c_info3 = st.columns(3)
+    with c_info1: st.metric(label="اسم الصنف", value=item['Name'][:20] + "..." if len(item['Name']) > 20 else item['Name'])
+    with c_info2: st.metric(label="كود SAP", value=item['SAP'])
+    with c_info3: st.metric(label="المخزون الحالي", value=live_stock)
+    
+    # 🌟 ثانياً: معالجة وعرض المبيعات السابقة كقائمة منسدلة لمنع تمدد الشاشة
+    if not s_match.empty:
         sales_cols = [c for c in st.session_state.stock_df.columns if "Total Sales" in str(c[0])]
-        cols_sales = st.columns(len(sales_cols) if sales_cols else 1)
-        for i, sc in enumerate(sales_cols):
-            with cols_sales[i]:
-                try: st.metric(label=str(sc[1]).strip(), value=f"{float(s_match.iloc[0][sc]):g}")
-                except: pass
+        if sales_cols:
+            st.markdown("---")
+            # خريطة لربط اسم الشهر بالعمود الفعلي
+            month_map = {str(sc[1]).strip(): sc for sc in sales_cols}
+            
+            # السماح للمستخدم بالاختيار من القائمة المنسدلة
+            selected_month_name = st.selectbox("📊 استعراض مبيعات الأشهر السابقة:", list(month_map.keys()))
+            
+            # عرض قيمة الشهر المختار فقط بداخل بطاقة أنيقة ومصغرة
+            chosen_col = month_map[selected_month_name]
+            try:
+                sales_value = f"{float(s_match.iloc[0][chosen_col]):g}"
+                st.metric(label=f"إجمالي مبيعات شهر ({selected_month_name})", value=sales_value)
+            except:
+                st.warning("تعذر جلب القيمة لهذا الشهر")
                 
-    st.info(f"📦 **الصنف الحالي:** {item['Name']} | **SAP:** {item['SAP']} | **المخزون الحالي:** {live_stock}")
+    st.markdown("---")
     
     # --- حقول تفاصيل الحفظ السريع الحرة ---
     st.selectbox("📦 الوحدة (Unit):", unit_options, index=unit_options.index(item['Unit']) if item['Unit'] in unit_options else 0, key="unit_field")
@@ -210,7 +239,7 @@ if st.session_state.active_item:
     if mode in ["internal", "damage", "recipe"]:
         st.selectbox("🎯 اختر الـ Order Group:", list(order_options.keys()), key="order_field")
         
-    # حقل الكمية الحر: بمجرد ضغط Enter ينفذ دالة الحفظ السريع فوراً دون أي تصفير للقائمة
+    # حقل الكمية الحر
     st.text_input("🔢 اكتب الكمية واضغط Enter للحفظ المباشر والتكرار:", value="1", key="qty_field", on_change=handle_quantity_entry)
 
 st.divider()
