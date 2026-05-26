@@ -11,7 +11,7 @@ st.set_page_config(page_title="ALI SYSTEM PRO", page_icon="📦", layout="center
 MASTER_FILE_PATH = "master_db.xlsx"
 STOCK_FILE_PATH = "stock_db.xlsx"
 
-# تطبيق نمط وألوان برنامج الكمبيوتر الكلاسيكي المريح للعين
+# تطبيق نمط وألوان برنامج الكمبيوتر الكلاسيكي
 st.markdown("""
     <style>
     .main { background-color: #f0f0f0 !important; }
@@ -20,8 +20,6 @@ st.markdown("""
     .metric-blue { background-color: #007acc; color: white; text-align: center; padding: 10px; font-weight: bold; border-radius: 4px; border: 1px solid #005999; }
     .metric-green { background-color: #2ea44f; color: white; text-align: center; padding: 10px; font-weight: bold; border-radius: 4px; border: 1px solid #227d3c; }
     .metric-orange { background-color: #f37023; color: white; text-align: center; padding: 10px; font-weight: bold; border-radius: 4px; border: 1px solid #d05616; }
-    .metric-title { font-size: 13px; margin-bottom: 2px; }
-    .metric-value { font-size: 20px; font-weight: bold; }
     
     .group-box {
         border: 1px solid #b8b8b8;
@@ -38,12 +36,10 @@ st.markdown("""
         border-bottom: 2px solid #007acc;
         padding-bottom: 4px;
     }
-    .computer-label { font-size: 12px; font-weight: bold; color: #444444; margin-bottom: 2px; }
-    .stButton>button { border-radius: 4px !important; font-weight: bold !important; height: 40px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- دالات قراءة البيانات المحسنة لعدم البطء ---
+# --- دالات قراءة البيانات وتنسيقها بأعلى سرعة من السيرفر ---
 @st.cache_data
 def load_processed_master(file_path):
     if not os.path.exists(file_path): return None
@@ -62,11 +58,11 @@ def load_processed_stock(file_path):
         return df_s, plants
     except: return None, []
 
-# جلب قاعدة البيانات الحالية
+# جلب قاعدة البيانات من الملفات المحفوظة
 saved_m = load_processed_master(MASTER_FILE_PATH)
 saved_s, saved_p = load_processed_stock(STOCK_FILE_PATH)
 
-# --- تهيئة متغيرات الجلسة الدائمة ---
+# --- تهيئة متغيرات الجلسة (Session State) ---
 for key in ["scanned_purchase", "scanned_internal", "scanned_damage", "scanned_recipe"]:
     if key not in st.session_state: st.session_state[key] = []
 
@@ -78,10 +74,10 @@ if "app_page" not in st.session_state: st.session_state.app_page = "setup"
 if "selected_plant" not in st.session_state: st.session_state.selected_plant = ""
 if "selected_tab" not in st.session_state: st.session_state.selected_tab = "Purchase Req"
 
-# متغيرات تحكم البحث لمنع الفقدان التلقائي أثناء الكتابة
-if "search_barcode_value" not in st.session_state: st.session_state.search_barcode_value = ""
+# متغيرات لحفظ الصنف الحالي المبحوث عنه في الذاكرة لمنع اختفاء البيانات
+if "current_searched_item" not in st.session_state: st.session_state.current_searched_item = None
 
-# --- القائمة الجانبية المخصصة لإدارة وتحديث الملفات ---
+# --- القائمة الجانبية لتحديث الملفات بشكل خام ---
 with st.sidebar:
     st.header("⚙️ إدارة وتحديث الملفات المحفوظة")
     st.markdown("### 📊 الحالة الحالية للملفات:")
@@ -91,24 +87,24 @@ with st.sidebar:
     else: st.error("❌ ملف المخزون: غير متوفر")
     
     st.divider()
-    new_master = st.file_uploader("تحديث ملف الباركودات (Excel)", type=["xlsx"])
+    new_master = st.file_uploader("تحديث ملف الباركودات (Excel)", type=["xlsx"], key="upload_m")
     if new_master:
         with open(MASTER_FILE_PATH, "wb") as f: f.write(new_master.getbuffer())
         st.cache_data.clear()
         st.session_state.master_df = load_processed_master(MASTER_FILE_PATH)
-        st.success("✅ تم تحديث قاعدة الباركودات!")
+        st.success("✅ تم التحديث!")
         st.rerun()
             
-    new_stock = st.file_uploader("تحديث ملف المخزون (Excel)", type=["xlsx"])
+    new_stock = st.file_uploader("تحديث ملف المخزون (Excel)", type=["xlsx"], key="upload_s")
     if new_stock:
         with open(STOCK_FILE_PATH, "wb") as f: f.write(new_stock.getbuffer())
         st.cache_data.clear()
         st.session_state.stock_df, st.session_state.plants = load_processed_stock(STOCK_FILE_PATH)
-        st.success("✅ تم تحديث قاعدة المخزون والمبيعات!")
+        st.success("✅ تم التحديث!")
         st.rerun()
 
 if st.session_state.master_df is None or st.session_state.stock_df is None:
-    st.warning("⚠️ يرجى رفع ملف الباركودات وملف المخزون من القائمة الجانبية للبدء.")
+    st.warning("⚠️ يرجى رفع الملفات من القائمة الجانبية أولاً للبدء.")
     st.stop()
 
 unit_options = ["AU", "BAG", "BOX", "CAR", "G", "KG", "M", "ML", "PAC", "PC"]
@@ -119,7 +115,7 @@ order_options = {
 }
 
 # ==============================================================================
-# 🚪 خطوة 1: شاشة تحديد الفرع والقسم
+# 🚪 خطوة 1: شاشة التجهيز واختيار الفرع
 # ==============================================================================
 if st.session_state.app_page == "setup":
     st.markdown('<div class="group-box"><div class="group-title">🏢 خطوة 1: تحديد وجهة العمل والفرع</div>', unsafe_allow_html=True)
@@ -134,11 +130,12 @@ if st.session_state.app_page == "setup":
         st.session_state.selected_plant = plant_selected
         st.session_state.selected_tab = tab_selected
         st.session_state.app_page = "scan"
+        st.session_state.current_searched_item = None
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
-# 🔍 خطوة 2: الشاشة المصلحة (البحث الفوري أولاً وعرض المخزون والمبيعات كاملاً)
+# 🔍 خطوة 2: الشاشة الاحترافية المعتمدة (استمارة للبحث + استمارة منفصلة للكمية)
 # ==============================================================================
 elif st.session_state.app_page == "scan":
     mode = {"Purchase Req": "purchase", "Internal Sale": "internal", "Damage Issue": "damage", "Recipe Issue": "recipe"}[st.session_state.selected_tab]
@@ -148,7 +145,7 @@ elif st.session_state.app_page == "scan":
     with c_nav1:
         if st.button("🔙 تغيير الفرع / القسم", use_container_width=True):
             st.session_state.app_page = "setup"
-            st.session_state.search_barcode_value = ""
+            st.session_state.current_searched_item = None
             st.rerun()
     with c_nav2:
         st.markdown(f"<div style='text-align:left; font-size:14px; padding-top:8px; color:#555;'>📍 الفرع الحالي: <b>{st.session_state.selected_plant}</b> | القسم: <b>{st.session_state.selected_tab}</b></div>", unsafe_allow_html=True)
@@ -159,51 +156,50 @@ elif st.session_state.app_page == "scan":
     if mode == "damage": modes_list.insert(0, "Short")
     search_mode = st.radio("طريقة البحث المعتمدة الحالية:", modes_list, horizontal=True)
 
-    # خانة الباركود المستقلة تماماً (تحديث القيمة المكتوبة بدون فور تصفير أو ترحيل عشوائي)
-    barcode_input = st.text_input("🔍 امسح الباركود أو اكتب الكود هنا واضغط Enter للبحث وعرض المخزون:", 
-                                  value=st.session_state.search_barcode_value)
-
-    # تنفيذ البحث الفوري عند تواجد مدخلات في الخانة
-    active_item = None
-    raw_val = barcode_input.strip()
-    
-    if raw_val:
-        if search_mode == "Short" and len(raw_val) >= 6: raw_val = raw_val[2:6]
-        sap_code = None
+    # 1. استمارة مستقلة ومخصصة فقط للبحث الفوري دون أي ترحيل تلقائي
+    with st.form(key="search_form", clear_on_submit=True):
+        raw_val = st.text_input("🔍 امسح الباركود أو اكتب الكود هنا واضغط Enter (أو اضغط زر ابحث لعرض البيانات والستوك):").strip()
+        submit_search = st.form_submit_button("🔎 ابحث عن الصنف وعرض المخزون", use_container_width=True)
         
-        if search_mode == "Orion":
-            col = next((c for c in st.session_state.stock_df.columns if 'Orion Item Code' in str(c).strip()), None)
-            if col:
-                m_stock = st.session_state.stock_df[st.session_state.stock_df[col].astype(str).str.strip().replace(r'\.0$', '', regex=True) == raw_val]
-                if not m_stock.empty: sap_code = str(m_stock.iloc[0, 0]).strip().replace('.0', '')
-        else:
-            s_col = 'Item Barcode' if search_mode in ["Short", "Barcode"] else 'Item Code'
-            m_temp = st.session_state.master_df.copy()
-            act_col = next((c for c in m_temp.columns if s_col.lower() in str(c).lower()), s_col)
-            m_temp[act_col] = m_temp[act_col].astype(str).str.strip().replace(r'\.0$', '', regex=True)
-            m_master = m_temp[m_temp[act_col] == raw_val]
-            if not m_master.empty: sap_code = str(m_master.iloc[0]['Item Code']).strip().replace('.0', '')
+        if submit_search and raw_val:
+            if search_mode == "Short" and len(raw_val) >= 6: raw_val = raw_val[2:6]
+            sap_code = None
+            
+            if search_mode == "Orion":
+                col = next((c for c in st.session_state.stock_df.columns if 'Orion Item Code' in str(c).strip()), None)
+                if col:
+                    m_stock = st.session_state.stock_df[st.session_state.stock_df[col].astype(str).str.strip().replace(r'\.0$', '', regex=True) == raw_val]
+                    if not m_stock.empty: sap_code = str(m_stock.iloc[0, 0]).strip().replace('.0', '')
+            else:
+                s_col = 'Item Barcode' if search_mode in ["Short", "Barcode"] else 'Item Code'
+                m_temp = st.session_state.master_df.copy()
+                act_col = next((c for c in m_temp.columns if s_col.lower() in str(c).lower()), s_col)
+                m_temp[act_col] = m_temp[act_col].astype(str).str.strip().replace(r'\.0$', '', regex=True)
+                m_master = m_temp[m_temp[act_col] == raw_val]
+                if not m_master.empty: sap_code = str(m_master.iloc[0]['Item Code']).strip().replace('.0', '')
 
-        if sap_code:
-            row = st.session_state.master_df[st.session_state.master_df['Item Code'].astype(str).str.strip().replace(r'\.0$', '', regex=True) == sap_code].iloc[0]
-            active_item = {
-                "SAP": sap_code, "Name": str(row['Item Name']), "Supplier": str(row['Supplier Name']),
-                "Factor": str(row['Factor']).split('.')[0], "Unit": str(row['UOM CODE']), "Supplier_ID": str(row['Supplier']).split('.')[0]
-            }
+            if sap_code:
+                row = st.session_state.master_df[st.session_state.master_df['Item Code'].astype(str).str.strip().replace(r'\.0$', '', regex=True) == sap_code].iloc[0]
+                st.session_state.current_searched_item = {
+                    "SAP": sap_code, "Name": str(row['Item Name']), "Supplier": str(row['Supplier Name']),
+                    "Factor": str(row['Factor']).split('.')[0], "Unit": str(row['UOM CODE']), "Supplier_ID": str(row['Supplier']).split('.')[0]
+                }
+            else:
+                st.session_state.current_searched_item = None
+                st.warning("⚠️ الصنف غير موجود بقاعدة البيانات، تأكد من كود البحث.")
 
-    # تفاصيل الصنف المقرؤ (المخزون والستوك يظهران هنا بوضوح)
-    st.markdown('<div class="group-box"><div class="group-title">📋 تفاصيل الصنف والمخزون الحالى</div>', unsafe_allow_html=True)
+    # 2. مراجعة بيانات الصنف وعرض الستوك والمبيعات بشكل دائم وثابت
+    st.markdown('<div class="group-box"><div class="group-title">📋 تفاصيل الصنف المقروء حالياً</div>', unsafe_allow_html=True)
     
-    if active_item:
-        s_match = st.session_state.stock_df[st.session_state.stock_df.iloc[:, 0].astype(str).str.strip().replace(r'\.0$', '', regex=True) == active_item['SAP']]
+    if st.session_state.current_searched_item:
+        item = st.session_state.current_searched_item
+        s_match = st.session_state.stock_df[st.session_state.stock_df.iloc[:, 0].astype(str).str.strip().replace(r'\.0$', '', regex=True) == item['SAP']]
         
-        # استخراج الستوك الفعلي للفرع
         live_stock = "0"
         if not s_match.empty:
             p_col = [c for c in st.session_state.stock_df.columns if str(c[0]).strip() == st.session_state.selected_plant]
             if p_col: live_stock = str(s_match.iloc[0][p_col[0]]).split('.')[0]
             
-        # استخراج مبيعات الأشهر السابقة كاملة لعرضها
         sales_info = "لا توجد مبيعات مسجلة"
         if not s_match.empty:
             sales_cols = [c for c in st.session_state.stock_df.columns if "Total Sales" in str(c[0])]
@@ -217,72 +213,81 @@ elif st.session_state.app_page == "scan":
                 sales_info = " &nbsp;|&nbsp; ".join(sales_segments)
 
         st.markdown(f"""
-            <table style="width:100%; border-collapse: collapse; margin-bottom: 10px; background-color: white;">
-                <tr style="border-bottom: 1px solid #ddd;"><td style="padding: 6px; font-weight:bold; width:30%;">SAP Code:</td><td style="padding: 6px; font-family:monospace;">{active_item['SAP']}</td></tr>
-                <tr style="border-bottom: 1px solid #ddd;"><td style="padding: 6px; font-weight:bold;">اسم الصنف:</td><td style="padding: 6px; color:#111; font-weight:bold;">{active_item['Name']}</td></tr>
-                <tr style="border-bottom: 1px solid #ddd;"><td style="padding: 6px; font-weight:bold; color:#007acc;">المخزون الحالي (Live Stock):</td><td style="padding: 6px; font-weight:bold; color:#007acc;">{live_stock}</td></tr>
-                <tr><td style="padding: 6px; font-weight:bold; color:#a07000;">تاريخ المبيعات (Sales):</td><td style="padding: 6px; color:#a07000;">{sales_info}</td></tr>
-            </table>
+            <div style="background-color: white; border: 1px solid #aaa; padding: 10px; border-radius: 4px; font-size: 14px; line-height: 1.6;">
+                <b>SAP Code:</b> <code style="color: #007acc;">{item['SAP']}</code><br>
+                <b>اسم الصنف (Description):</b> <span>{item['Name']}</span><br>
+                <b>المخزون الحالي في فرعك (Live Stock):</b> <span style="color: green; font-weight: bold;">{live_stock}</span><br>
+                <b>حركة المبيعات السابقة (Sales):</b> <span style="color: #a07000;">{sales_info}</span>
+            </div>
         """, unsafe_allow_html=True)
         
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            u_sel = st.selectbox("الوحدة (Unit):", unit_options, index=unit_options.index(active_item['Unit']) if active_item['Unit'] in unit_options else 0)
-        with col_f2:
-            if mode in ["internal", "damage", "recipe"]:
-                o_sel = st.selectbox("Order Group:", list(order_options.keys()))
-            else:
-                st.text_input("تاريخ اليوم لجلسة العمل:", value=datetime.now().strftime('%d.%m.%Y'), disabled=True)
-                
-        # خانة كتابة الكمية المستقلة (تنتظر كتابتك والضغط على الحفظ الفعلي)
-        qty_input = st.number_input("✍️ اكتب كمية الجرد المطلوبة حالياً هنا:", min_value=1.0, value=1.0, step=1.0, format="%g")
+        st.write("")
         
-        col_btn1, col_btn2 = st.columns([3, 1])
-        with col_btn1:
-            if st.button("💾 حفظ وإدراج الصنف في الجدول المعاين بالأسفل", type="primary", use_container_width=True):
+        # استمارة ترحيل مستقلة تماماً لحفظ الصنف والتحكم في الكمية والوحدة
+        with st.form(key="save_qty_form", clear_on_submit=False):
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                u_sel = st.selectbox("الوحدة (Unit):", unit_options, index=unit_options.index(item['Unit']) if item['Unit'] in unit_options else 0)
+            with col_f2:
+                if mode in ["internal", "damage", "recipe"]:
+                    o_sel = st.selectbox("Order Group:", list(order_options.keys()))
+                else:
+                    st.text_input("تاريخ اليوم لجلسة العمل:", value=datetime.now().strftime('%d.%m.%Y'), disabled=True)
+            
+            # حقل إدخال الكمية اليدوي (تكتب الكمية التي تريدها قبل الحفظ)
+            qty_val = st.number_input("✍️ اكتب كمية الجرد الحالية الآن واضغط الحفظ النهائي:", min_value=1.0, value=1.0, step=1.0, format="%g")
+            
+            col_b1, col_b2 = st.columns([3, 1])
+            with col_b1:
+                btn_save = st.form_submit_button("💾 حفظ وإدراج الصنف في الجدول بالأسفل", type="primary", use_container_width=True)
+            with col_b2:
+                btn_clear = st.form_submit_button("CLEAR", use_container_width=True)
+                
+            if btn_save:
                 duplicate = False
                 for idx, ex in enumerate(current_list):
-                    if ex['SAP'] == active_item['SAP']:
-                        current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_input)
+                    if ex['SAP'] == item['SAP']:
+                        current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_val)
                         duplicate = True
                         break
                 if not duplicate:
                     new_row = {
-                        "SAP": active_item['SAP'], "Unit": u_sel, "Qty": str(qty_input),
-                        "Plant": st.session_state.selected_plant, "Supplier_ID": active_item['Supplier_ID'], "Name": active_item['Name']
+                        "SAP": item['SAP'], "Unit": u_sel, "Qty": str(qty_val),
+                        "Plant": st.session_state.selected_plant, "Supplier_ID": item['Supplier_ID'], "Name": item['Name']
                     }
                     if mode in ["internal", "damage", "recipe"]: new_row["Order"] = order_options.get(o_sel)
                     current_list.append(new_row)
                     
-                # تصفير الخانة والعودة لاستقبال الصنف التالي بنجاح دون أخطاء
-                st.session_state.search_barcode_value = ""
+                # تصفير الشاشة والعودة للبحث التالي ونظافة الصفحة
+                st.session_state.current_searched_item = None
+                st.success(f"✅ تم حفظ {item['Name']} بنجاح!")
                 st.rerun()
-        with col_btn2:
-            if st.button("CLEAR", use_container_width=True):
-                st.session_state.search_barcode_value = ""
+                
+            if btn_clear:
+                st.session_state.current_searched_item = None
                 st.rerun()
     else:
-        st.markdown("<p style='text-align:center; color:#777; padding:15px;'>يرجى مسح أو إدخال كود الصنف للتحقق والبدء...</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#777; padding:15px;'>يرجى مسح كود الصنف بالخيار الأعلى أولاً للتحقق من المبيعات والستوك...</p>", unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ==============================================================================
-    # 📊 خطوة 3: لوحة معاينة الجدول النهائي والتصدير
+    # 📊 خطوة 3: لوحة المعاينة الإجمالية الملونة للتصدير
     # ==============================================================================
     if current_list:
         st.markdown('<div class="group-box"><div class="group-title">📊 لوحة مراجعة ومعاينة القائمة الإجمالية</div>', unsafe_allow_html=True)
         
         c_m1, c_m2, c_m3 = st.columns(3)
         with c_m1:
-            st.markdown(f'<div class="metric-blue"><div class="metric-title">عدد الأصناف الحالي</div><div class="metric-value">{len(current_list)}</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-blue"><div class="metric-title" style="color:white;">عدد الأصناف الحالي</div><div class="metric-value" style="color:white; font-size:22px;">{len(current_list)}</div></div>', unsafe_allow_html=True)
         with c_m2:
-            st.markdown(f'<div class="metric-green"><div class="metric-title">TOTAL ORDER</div><div class="metric-value">{len(current_list)}</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-green"><div class="metric-title" style="color:white;">TOTAL ORDER</div><div class="metric-value" style="color:white; font-size:22px;">{len(current_list)}</div></div>', unsafe_allow_html=True)
         with c_m3:
             if mode == "purchase":
                 suppliers_count = len(set([i.get('Supplier_ID', '') for i in current_list if i.get('Supplier_ID')]))
-                st.markdown(f'<div class="metric-orange"><div class="metric-title">عدد الموردين</div><div class="metric-value">{suppliers_count}</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="metric-orange"><div class="metric-title" style="color:white;">عدد الموردين</div><div class="metric-value" style="color:white; font-size:22px;">{suppliers_count}</div></div>', unsafe_allow_html=True)
             else:
-                st.markdown('<div class="metric-orange"><div class="metric-title">عدد الموردين</div><div class="metric-value">-</div></div>', unsafe_allow_html=True)
+                st.markdown('<div class="metric-orange"><div class="metric-title" style="color:white;">عدد الموردين</div><div class="metric-value" style="color:white; font-size:22px;">-</div></div>', unsafe_allow_html=True)
         
         st.write("")
         df_preview = pd.DataFrame(current_list)
@@ -290,7 +295,7 @@ elif st.session_state.app_page == "scan":
         
         if st.button("🗑️ مسح محتويات الجدول بالكامل وإعادة البدء", type="secondary"):
             setattr(st.session_state, f"scanned_{mode}", [])
-            st.session_state.search_barcode_value = ""
+            st.session_state.current_searched_item = None
             st.rerun()
             
         final_rows = []
