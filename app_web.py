@@ -23,7 +23,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- دالات قراءة خفيفة جداً وسريعة لمنع التعليق والأحجام الكبيرة ---
+# --- دالات قراءة خفيفة جداً وسريعة لمنع التعليق وعلاج العناوين المركبة ---
 def fast_load_master():
     if not os.path.exists(MASTER_FILE_PATH): return None
     try:
@@ -34,12 +34,11 @@ def fast_load_master():
 def fast_load_stock():
     if not os.path.exists(STOCK_FILE_PATH): return None, []
     try:
-        # قراءة الملف كـ سطر عادي لتجنب بطء الـ Multi-Index تماماً
+        # قراءة الملف كـ سطر عادي لتجنب بطء وقفل الـ Multi-Index تماماً
         df = pd.read_excel(STOCK_FILE_PATH, dtype=str)
-        # تنظيف العمود الأول (SAP Codes)
         df.iloc[:, 0] = df.iloc[:, 0].str.strip().replace(r'\.0$', '', regex=True)
         
-        # استخراج الفروع المتوفرة أوتوماتيكياً من العناوين
+        # استخراج الفروع المتوفرة أوتوماتيكياً من أسماء الأعمدة الرقمية
         plants = []
         for col in df.columns:
             col_str = str(col).strip()
@@ -49,7 +48,7 @@ def fast_load_stock():
     except:
         return None, []
 
-# --- تهيئة متغيرات الجلسة وتأمين عدم التكرار ---
+# --- تهيئة متغيرات الجلسة وتأمين عدم التكرار المستمر ---
 for key in ["scanned_purchase", "scanned_internal", "scanned_damage", "scanned_recipe"]:
     if key not in st.session_state: st.session_state[key] = []
 
@@ -66,7 +65,7 @@ if "selected_plant" not in st.session_state: st.session_state.selected_plant = "
 if "selected_tab" not in st.session_state: st.session_state.selected_tab = "Purchase Req"
 if "current_searched_item" not in st.session_state: st.session_state.current_searched_item = None
 
-# --- القائمة الجانبية المحدثة لإدارة الملفات ---
+# --- القائمة الجانبية المحدثة لإدارة ورفع الملفات ---
 with st.sidebar:
     st.header("⚙️ إدارة وتحديث الملفات المحفوظة")
     st.markdown("### 📊 الحالة الحالية للملفات:")
@@ -124,7 +123,7 @@ if st.session_state.app_page == "setup":
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
-# 🔍 خطوة 2: شاشة المسح الآمنة والبحث الفوري الفعال
+# 🔍 خطوة 2: شاشة المسح والبحث الفوري والآمن
 # ==============================================================================
 elif st.session_state.app_page == "scan":
     mode = {"Purchase Req": "purchase", "Internal Sale": "internal", "Damage Issue": "damage", "Recipe Issue": "recipe"}[st.session_state.selected_tab]
@@ -145,7 +144,6 @@ elif st.session_state.app_page == "scan":
     if mode == "damage": modes_list.insert(0, "Short")
     search_mode = st.radio("طريقة البحث المعتمدة الحالية:", modes_list, horizontal=True)
 
-    # نموذج الاستمارة الخفيفة للبحث
     with st.form(key="search_bar_form", clear_on_submit=True):
         raw_val = st.text_input("🔍 امسح الباركود أو اكتب الكود هنا واضغط Enter للبحث الحقيقي:").strip()
         submit_search = st.form_submit_button("🔎 ابحث عن الصنف وعرض البيانات", use_container_width=True)
@@ -155,7 +153,6 @@ elif st.session_state.app_page == "scan":
             sap_code = None
             
             if search_mode == "Orion":
-                # البحث في قاعدة الستوك عن كود أوريون
                 orion_col = next((c for c in st.session_state.stock_df.columns if 'Orion' in str(c)), None)
                 if orion_col:
                     m_stock = st.session_state.stock_df[st.session_state.stock_df[orion_col].astype(str).str.strip().replace(r'\.0$', '', regex=True) == raw_val]
@@ -178,19 +175,16 @@ elif st.session_state.app_page == "scan":
                 st.session_state.current_searched_item = None
                 st.warning("⚠️ الصنف غير موجود أو الكود خاطئ.")
 
-    # عرض تفاصيل الصنف الحالي والمخزون بشكل مستقر وثابت
     st.markdown('<div class="group-box"><div class="group-title">📋 تفاصيل الصنف والمخزون الحالي للفرع</div>', unsafe_allow_html=True)
     
     if st.session_state.current_searched_item:
         item = st.session_state.current_searched_item
         s_match = st.session_state.stock_df[st.session_state.stock_df.iloc[:, 0].astype(str).str.strip().replace(r'\.0$', '', regex=True) == item['SAP']]
         
-        # جلب الستوك من العمود المطابق للفرع
         live_stock = "0"
         if not s_match.empty and st.session_state.selected_plant in st.session_state.stock_df.columns:
             live_stock = str(s_match.iloc[0][st.session_state.selected_plant]).split('.')[0]
             
-        # جلب المبيعات للأشهر المتوفرة بالعناوين
         sales_segments = []
         if not s_match.empty:
             for col in st.session_state.stock_df.columns:
@@ -210,7 +204,6 @@ elif st.session_state.app_page == "scan":
         
         st.write("")
         
-        # استمارة إدخال الكمية والحفظ والترحيل للجدول
         with st.form(key="quantity_save_form"):
             col_f1, col_f2 = st.columns(2)
             with col_f1:
@@ -257,7 +250,7 @@ elif st.session_state.app_page == "scan":
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ==============================================================================
-    # 📊 خطوة 3: لوحة المعاينة الإجمالية والتصدير النهائي
+    # 📊 خطوة 3: المعاينة والتصدير النهائي لـ SAP
     # ==============================================================================
     if current_list:
         st.markdown('<div class="group-box"><div class="group-title">📊 لوحة مراجعة ومعاينة القائمة الإجمالية</div>', unsafe_allow_html=True)
