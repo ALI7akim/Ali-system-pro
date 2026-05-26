@@ -228,4 +228,147 @@ elif st.session_state.app_page == "scan":
         live_stock = "-"
         if not s_match.empty:
             p_col = [c for c in st.session_state.stock_df.columns if str(c[0]).strip() == st.session_state.selected_plant]
-            if p_col: live_stock = str(s_
+            if p_col: live_stock = str(s_match.iloc[0][p_col[0]]).split('.')[0]
+
+        sales_info = "No sales history recorded"
+        if not s_match.empty:
+            sales_cols = [c for c in st.session_state.stock_df.columns if "Total Sales" in str(c[0])]
+            if sales_cols:
+                month_map = {str(sc[1]).strip(): sc for sc in sales_cols}
+                sales_segments = []
+                for m_name, m_col in month_map.items():
+                    try: val_g = f"{float(s_match.iloc[0][m_col]):g}"
+                    except: val_g = "0"
+                    sales_segments.append(f"<b>{m_name}:</b> {val_g}")
+                sales_info = " &nbsp;|&nbsp; ".join(sales_segments)
+
+        st.markdown(f"""
+            <table style="width:100%; border-collapse: collapse; font-size:13px; background-color: white;">
+                <tr style="border-bottom: 1px solid #ddd;"><td style="padding: 6px; font-weight:bold; width:30%;">SAP Code:</td><td style="padding: 6px; font-family: monospace; color:#007acc;">{item['SAP']}</td></tr>
+                <tr style="border-bottom: 1px solid #ddd;"><td style="padding: 6px; font-weight:bold;">Description:</td><td style="padding: 6px; font-weight:bold; color:#111;">{item['Name']}</td></tr>
+                <tr style="border-bottom: 1px solid #ddd;"><td style="padding: 6px; font-weight:bold;">Company / Supplier:</td><td style="padding: 6px; color:#555; font-weight:bold;">{item['Supplier']} <small style='color:#888;'>({item['Supplier_ID']})</small></td></tr>
+                <tr style="border-bottom: 1px solid #ddd;"><td style="padding: 6px; font-weight:bold;">Live Stock:</td><td style="padding: 6px; font-weight:bold; color:#2ea44f;">{live_stock}</td></tr>
+                <tr>
+                    <td style="padding: 6px; font-weight:bold;">Sales History:</td>
+                    <td style="padding: 6px; background-color: #fcf8e3; color: #c09853; font-size: 12px; border-radius:4px;">{sales_info}</td>
+                </tr>
+            </table>
+        """, unsafe_allow_html=True)
+        
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            u_sel = st.selectbox("Unit (UOM):", unit_options, index=unit_options.index(item['Unit']) if item['Unit'] in unit_options else 0)
+        with col_f2:
+            if mode in ["internal", "damage", "recipe"]:
+                o_sel = st.selectbox("Order Group:", list(order_options.keys()))
+            else:
+                st.text_input("Posting Date:", value=datetime.now().strftime('%d.%m.%Y'), disabled=True)
+                
+        st.write("")
+        # Auto-save triggered by Enter on Qty or Click
+        if st.button("💾 Save Item & Scan Next (Enter)", type="primary", use_container_width=True, key=f"save_btn_{st.session_state.barcode_key}") or qty_input > 0:
+            if qty_input > 0:
+                duplicate = False
+                for idx, ex in enumerate(current_list):
+                    if ex['SAP'] == item['SAP']:
+                        current_list[idx]['Qty'] = str(float(ex['Qty']) + qty_input)
+                        duplicate = True
+                        break
+                if not duplicate:
+                    new_row = {
+                        "SAP": item['SAP'], "Unit": u_sel, "Qty": str(qty_input),
+                        "Plant": st.session_state.selected_plant, "Supplier_ID": item['Supplier_ID'], "Name": item['Name'], "Supplier": item['Supplier']
+                    }
+                    if mode in ["internal", "damage", "recipe"]: new_row["Order"] = order_options.get(o_sel)
+                    current_list.append(new_row)
+            
+            # Reset UI state & prepare for next clean scan
+            st.session_state.active_item = None
+            st.session_state.barcode_key += 1
+            st.rerun()
+    else:
+        st.markdown("<p style='text-align:center; color:#777; padding:15px;'>System ready. Waiting for the next barcode scan...</p>", unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ==============================================================================
+    # 📊 PREVIEW PANEL: Review, Edit, & Export to Excel/TXT
+    # ==============================================================================
+    if current_list:
+        st.write("")
+        show_preview = st.checkbox("👁️ Open Review Panel & Export Data (Excel / TXT)", value=False)
+        
+        if show_preview:
+            st.markdown('<div class="group-box"><div class="group-title">📊 Total Scanned List Review</div>', unsafe_allow_html=True)
+            st.write("✏️ **Modify quantities or delete items from the current session:**")
+            
+            updated_list = []
+            for idx, entry in enumerate(current_list):
+                col_i1, col_i2, col_i3, col_i4 = st.columns([3, 1.5, 1.5, 1])
+                with col_i1:
+                    st.markdown(f"<div style='padding-top:5px; font-size:13px;'><b>{entry['Name']}</b><br><small style='color:#666;'>SAP: {entry['SAP']} | Supplier: {entry.get('Supplier', '-')}</small></div>", unsafe_allow_html=True)
+                with col_i2:
+                    new_qty = st.number_input(f"Qty", min_value=0.001, value=float(entry['Qty']), step=0.001, format="%g", key=f"edit_qty_{idx}")
+                    entry['Qty'] = str(new_qty)
+                with col_i3:
+                    st.markdown(f"<div style='padding-top:28px; text-align:center; font-weight:bold; color:#007acc;'>{entry['Unit']}</div>", unsafe_allow_html=True)
+                with col_i4:
+                    st.write("")
+                    st.write("")
+                    if st.button("❌", key=f"del_{idx}", help="Remove item"):
+                        current_list.pop(idx)
+                        setattr(st.session_state, f"scanned_{mode}", current_list)
+                        st.rerun()
+                updated_list.append(entry)
+            
+            setattr(st.session_state, f"scanned_{mode}", updated_list)
+            st.divider()
+            
+            c_m1, c_m2, c_m3 = st.columns(3)
+            with c_m1: st.markdown(f'<div class="metric-blue"><div class="metric-title">Unique Items</div><div class="metric-value">{len(current_list)}</div></div>', unsafe_allow_html=True)
+            with c_m2: st.markdown(f'<div class="metric-green"><div class="metric-title">TOTAL ORDER</div><div class="metric-value">{len(current_list)}</div></div>', unsafe_allow_html=True)
+            with c_m3:
+                if mode == "purchase":
+                    suppliers_count = len(set([i.get('Supplier_ID', '') for i in current_list if i.get('Supplier_ID')]))
+                    st.markdown(f'<div class="metric-orange"><div class="metric-title">Suppliers Count</div><div class="metric-value">{suppliers_count}</div></div>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<div class="metric-orange"><div class="metric-title">Suppliers Count</div><div class="metric-value">-</div></div>', unsafe_allow_html=True)
+            
+            st.write("")
+            if st.button("🗑️ Clear Entire List & Reset Table", type="secondary", use_container_width=True):
+                setattr(st.session_state, f"scanned_{mode}", [])
+                st.session_state.active_item = None
+                st.rerun()
+                
+            # SAP Structures Generation Mapping
+            final_rows = []
+            today = datetime.now()
+            curr_idx = 0
+            last_v = None
+            
+            for it in current_list:
+                if mode == "internal":
+                    final_rows.append({'SAP': it['SAP'], 'N1': '', 'N2': '', 'QUTY': it['Qty'], 'UNT': it['Unit'], 'LOC': '1000', 'COST CNTER': it['Plant'], 'ORDER': it.get('Order',''), 'N3': '', 'N4': '', 'N5': '', 'N6': '', 'N7': '', 'MOV TYP': 'ZX1', 'N9': '', 'N10': '', 'PLANT': it['Plant']})
+                elif mode == "damage":
+                    final_rows.append({'ITEM': it['SAP'], 'N1': '', 'N2': '', 'QUTY': it['Qty'], 'UON': it['Unit'], 'LOC': '1000', 'PLANT_MAIN': it['Plant'], 'ORDER': it.get('Order',''), 'N3': '', 'N4': '', 'N5': '', 'N6': '', 'N7': '', 'DAMAGE TYPE': 'Z51', 'N11': '', 'N12': '', 'PLANT': it['Plant']})
+                elif mode == "recipe":
+                    final_rows.append({'ITEM': it['SAP'], 'N1': '', 'N2': '', 'QUTY': it['Qty'], 'N3': '', 'LOC': '1000', 'N4': '', 'N5': '', 'N6': '', 'MOV': '317', 'N7': '', 'N8': '', 'PLANT': it['Plant']})
+                elif mode == "purchase":
+                    if it['Supplier_ID'] != last_v: curr_idx += 1; last_v = it['Supplier_ID']
+                    try: p_grp_val = str(int(it['Plant']) - 1000) if int(it['Plant']) > 1000 else '104'
+                    except: p_grp_val = '104'
+                    final_rows.append({'Indicator': curr_idx, 'Doc Type': 'ZLPO', 'Vendor': it['Supplier_ID'], 'P.Org': '1100', 'P. Grp': p_grp_val, 'Company Code': '1000', 'Doc Date': today.strftime('%d.%m.%Y'), 'Material': it['SAP'], 'Quantity': it['Qty'], 'UOM': it['Unit'], 'Plant': it['Plant'], 'Storage Location': '1000', 'Delivery Date': (today + timedelta(days=2)).strftime('%d.%m.%Y'), 'Return': ''})
+                    
+            df_final = pd.DataFrame(final_rows)
+            col_dl1, col_dl2 = st.columns(2)
+            with col_dl1:
+                buffer_xlsx = io.BytesIO()
+                with pd.ExcelWriter(buffer_xlsx, engine='openpyxl') as writer: df_final.to_excel(writer, index=False)
+                st.download_button(label="🟢 Preview & Export List (Excel)", data=buffer_xlsx.getvalue(), file_name=f"AliSystem_{mode}_{today.strftime('%Y%m%d')}.xlsx", use_container_width=True)
+            with col_dl2:
+                buffer_txt = io.BytesIO()
+                df_final.to_csv(buffer_txt, sep='\t', index=False)
+                st.download_button(label="📥 Download TXT File for SAP", data=buffer_txt.getvalue(), file_name=f"AliSystem_{mode}_{today.strftime('%Y%m%d')}.txt", use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.info("The scanned list is currently empty. No items added yet.")
