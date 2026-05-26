@@ -129,4 +129,103 @@ elif st.session_state.app_page == "scan":
     c_nav1, c_nav2 = st.columns([1, 2])
     with c_nav1:
         if st.button("🔙 Change Plant / Section", use_container_width=True):
-            st.
+            st.session_state.app_page = "setup"
+            st.session_state.active_item = None
+            st.rerun()
+    with c_nav2:
+        st.markdown(f"<div style='text-align:right; font-size:14px; padding-top:8px; color:#555;'>📍 Plant: <b>{st.session_state.selected_plant}</b> | Section: <b>{st.session_state.selected_tab}</b></div>", unsafe_allow_html=True)
+    
+    st.divider()
+
+    modes_list = ["Barcode", "SAP", "Orion"]
+    if mode == "damage": modes_list.insert(0, "Short")
+    search_mode = st.radio("Search Mode:", modes_list, horizontal=True)
+
+    # Barcode Change Event Handler
+    def on_barcode_change():
+        input_key = f"barcode_input_{st.session_state.barcode_key}"
+        raw_val = str(st.session_state[input_key]).strip()
+        # Clean input to allow digits only
+        raw_val = ''.join(filter(str.isdigit, raw_val))
+        if not raw_val or raw_val == "0" or raw_val == "": return
+        
+        if search_mode == "Short" and len(raw_val) >= 6: raw_val = raw_val[2:6]
+        sap_code = None
+        
+        if search_mode == "Orion":
+            col = next((c for c in st.session_state.stock_df.columns if 'Orion Item Code' in str(c).strip()), None)
+            if col:
+                m_stock = st.session_state.stock_df[st.session_state.stock_df[col].astype(str).str.strip().replace(r'\.0$', '', regex=True) == raw_val]
+                if not m_stock.empty: sap_code = str(m_stock.iloc[0, 0]).strip().replace('.0', '')
+        else:
+            s_col = 'Item Barcode' if search_mode in ["Short", "Barcode"] else 'Item Code'
+            m_temp = st.session_state.master_df.copy()
+            act_col = next((c for c in m_temp.columns if s_col.lower() in str(c).lower()), s_col)
+            m_temp[act_col] = m_temp[act_col].astype(str).str.strip().replace(r'\.0$', '', regex=True)
+            m_master = m_temp[m_temp[act_col] == raw_val]
+            if not m_master.empty: sap_code = str(m_master.iloc[0]['Item Code']).strip().replace('.0', '')
+
+        if sap_code:
+            row = st.session_state.master_df[st.session_state.master_df['Item Code'].astype(str).str.strip().replace(r'\.0$', '', regex=True) == sap_code].iloc[0]
+            st.session_state.active_item = {
+                "SAP": sap_code, "Name": str(row['Item Name']), "Supplier": str(row['Supplier Name']),
+                "Factor": str(row['Factor']).split('.')[0], "Unit": str(row['UOM CODE']), "Supplier_ID": str(row['Supplier']).split('.')[0]
+            }
+        else:
+            st.session_state.active_item = None
+
+    # Barcode and Quantity Input Fields Side-by-Side (Same Row)
+    col_inputs1, col_inputs2 = st.columns([2, 1])
+    
+    with col_inputs1:
+        barcode_val = st.text_input("🔍 Scan Barcode or Enter Code (Digits Only) + Press Enter:", 
+                        value="",
+                        key=f"barcode_input_{st.session_state.barcode_key}", 
+                        on_change=on_barcode_change)
+        
+    with col_inputs2:
+        qty_input = st.number_input("✏️ Quantity:", 
+                                    min_value=0.0, value=0.0, step=0.001, format="%g", key=f"qty_input_{st.session_state.barcode_key}")
+
+    # Injecting JavaScript Navigation Component
+    components.html(f"""
+        <script>
+        function setupPosNavigation() {{
+            var parentDoc = window.parent.document;
+            var bInput = parentDoc.querySelector('input[data-testid="stTextInput"]');
+            var qInput = parentDoc.querySelector('input[data-testid="stNumberInput"]');
+            
+            if(bInput && !bInput.dataset.hooked) {{
+                bInput.focus();
+                bInput.dataset.hooked = "true";
+                bInput.addEventListener('keydown', function(e) {{
+                    if(e.key === 'Enter') {{
+                        setTimeout(function() {{ if(qInput) {{ qInput.focus(); qInput.select(); }} }}, 300);
+                    }}
+                }});
+            }}
+            
+            if(qInput && !qInput.dataset.hooked) {{
+                qInput.dataset.hooked = "true";
+                qInput.addEventListener('keydown', function(e) {{
+                    if(e.key === 'Enter') {{
+                        var saveBtn = parentDoc.querySelector('button[kind="primary"]');
+                        if(saveBtn) {{ setTimeout(function() {{ saveBtn.click(); }}, 100); }}
+                    }}
+                }});
+            }}
+        }}
+        setInterval(setupPosNavigation, 500);
+        </script>
+    """, height=0)
+
+    st.markdown('<div class="group-box"><div class="group-title">📋 Active Item Details</div>', unsafe_allow_html=True)
+
+    if st.session_state.active_item:
+        item = st.session_state.active_item
+        s_match = st.session_state.stock_df[st.session_state.stock_df.iloc[:, 0].astype(str).str.strip().replace(r'\.0$', '', regex=True) == item['SAP']]
+        
+        live_stock = "-"
+        if not s_match.empty:
+            p_col = [c for c in st.session_state.stock_df.columns if str(c[0]).strip() == st.session_state.selected_plant]
+            if p_col: live_stock = str(s_
