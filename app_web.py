@@ -11,73 +11,62 @@ st.set_page_config(page_title="ALI SYSTEM PRO", page_icon="📦", layout="center
 MASTER_FILE_PATH = "master_db.xlsx"
 STOCK_FILE_PATH = "stock_db.xlsx"
 
-# تطبيق نمط وألوان برنامج الكمبيوتر الكلاسيكي
 st.markdown("""
     <style>
     .main { background-color: #f0f0f0 !important; }
     .main .block-container { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; max-width: 850px; }
-    
-    .metric-blue { background-color: #007acc; color: white; text-align: center; padding: 10px; font-weight: bold; border-radius: 4px; border: 1px solid #005999; }
-    .metric-green { background-color: #2ea44f; color: white; text-align: center; padding: 10px; font-weight: bold; border-radius: 4px; border: 1px solid #227d3c; }
-    .metric-orange { background-color: #f37023; color: white; text-align: center; padding: 10px; font-weight: bold; border-radius: 4px; border: 1px solid #d05616; }
-    
-    .group-box {
-        border: 1px solid #b8b8b8;
-        background-color: #ececec;
-        padding: 15px;
-        border-radius: 4px;
-        margin-bottom: 12px;
-    }
-    .group-title {
-        font-size: 14px;
-        font-weight: bold;
-        color: #111111;
-        margin-bottom: 10px;
-        border-bottom: 2px solid #007acc;
-        padding-bottom: 4px;
-    }
+    .metric-blue { background-color: #007acc; color: white; text-align: center; padding: 10px; font-weight: bold; border-radius: 4px; }
+    .metric-green { background-color: #2ea44f; color: white; text-align: center; padding: 10px; font-weight: bold; border-radius: 4px; }
+    .metric-orange { background-color: #f37023; color: white; text-align: center; padding: 10px; font-weight: bold; border-radius: 4px; }
+    .group-box { border: 1px solid #b8b8b8; background-color: #ececec; padding: 15px; border-radius: 4px; margin-bottom: 12px; }
+    .group-title { font-size: 14px; font-weight: bold; color: #111111; margin-bottom: 10px; border-bottom: 2px solid #007acc; padding-bottom: 4px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- دالات قراءة البيانات وتنسيقها بأعلى سرعة من السيرفر ---
-@st.cache_data
-def load_processed_master(file_path):
-    if not os.path.exists(file_path): return None
+# --- دالات قراءة خفيفة جداً وسريعة لمنع التعليق والأحجام الكبيرة ---
+def fast_load_master():
+    if not os.path.exists(MASTER_FILE_PATH): return None
     try:
-        df = pd.read_excel(file_path)
+        df = pd.read_excel(MASTER_FILE_PATH)
         return df.astype(str).apply(lambda x: x.str.strip())
     except: return None
 
-@st.cache_data
-def load_processed_stock(file_path):
-    if not os.path.exists(file_path): return None, []
+def fast_load_stock():
+    if not os.path.exists(STOCK_FILE_PATH): return None, []
     try:
-        df_s = pd.read_excel(file_path, header=[0, 1], dtype=str)
-        df_s.iloc[:, 0] = df_s.iloc[:, 0].str.strip().replace(r'\.0$', '', regex=True)
-        plants = sorted(list(set([str(c[0]).strip() for c in df_s.columns if str(c[0]).strip().isdigit()])))
-        return df_s, plants
-    except: return None, []
+        # قراءة الملف كـ سطر عادي لتجنب بطء الـ Multi-Index تماماً
+        df = pd.read_excel(STOCK_FILE_PATH, dtype=str)
+        # تنظيف العمود الأول (SAP Codes)
+        df.iloc[:, 0] = df.iloc[:, 0].str.strip().replace(r'\.0$', '', regex=True)
+        
+        # استخراج الفروع المتوفرة أوتوماتيكياً من العناوين
+        plants = []
+        for col in df.columns:
+            col_str = str(col).strip()
+            if col_str.isdigit() and col_str not in plants:
+                plants.append(col_str)
+        return df, sorted(plants)
+    except:
+        return None, []
 
-# جلب قاعدة البيانات من الملفات المحفوظة
-saved_m = load_processed_master(MASTER_FILE_PATH)
-saved_s, saved_p = load_processed_stock(STOCK_FILE_PATH)
-
-# --- تهيئة متغيرات الجلسة (Session State) ---
+# --- تهيئة متغيرات الجلسة وتأمين عدم التكرار ---
 for key in ["scanned_purchase", "scanned_internal", "scanned_damage", "scanned_recipe"]:
     if key not in st.session_state: st.session_state[key] = []
 
-if "master_df" not in st.session_state: st.session_state.master_df = saved_m
-if "stock_df" not in st.session_state: st.session_state.stock_df = saved_s
-if "plants" not in st.session_state: st.session_state.plants = saved_p
+if "master_df" not in st.session_state:
+    st.session_state.master_df = fast_load_master()
+
+if "stock_df" not in st.session_state:
+    df_s, p_list = fast_load_stock()
+    st.session_state.stock_df = df_s
+    st.session_state.plants = p_list
 
 if "app_page" not in st.session_state: st.session_state.app_page = "setup"
 if "selected_plant" not in st.session_state: st.session_state.selected_plant = ""
 if "selected_tab" not in st.session_state: st.session_state.selected_tab = "Purchase Req"
-
-# متغيرات لحفظ الصنف الحالي المبحوث عنه في الذاكرة لمنع اختفاء البيانات
 if "current_searched_item" not in st.session_state: st.session_state.current_searched_item = None
 
-# --- القائمة الجانبية لتحديث الملفات بشكل خام ---
+# --- القائمة الجانبية المحدثة لإدارة الملفات ---
 with st.sidebar:
     st.header("⚙️ إدارة وتحديث الملفات المحفوظة")
     st.markdown("### 📊 الحالة الحالية للملفات:")
@@ -87,24 +76,24 @@ with st.sidebar:
     else: st.error("❌ ملف المخزون: غير متوفر")
     
     st.divider()
-    new_master = st.file_uploader("تحديث ملف الباركودات (Excel)", type=["xlsx"], key="upload_m")
+    new_master = st.file_uploader("تحديث ملف الباركودات (Excel)", type=["xlsx"], key="up_m")
     if new_master:
         with open(MASTER_FILE_PATH, "wb") as f: f.write(new_master.getbuffer())
-        st.cache_data.clear()
-        st.session_state.master_df = load_processed_master(MASTER_FILE_PATH)
-        st.success("✅ تم التحديث!")
+        st.session_state.master_df = fast_load_master()
+        st.success("✅ تم تحديث قاعدة الباركودات!")
         st.rerun()
             
-    new_stock = st.file_uploader("تحديث ملف المخزون (Excel)", type=["xlsx"], key="upload_s")
+    new_stock = st.file_uploader("تحديث ملف المخزون (Excel)", type=["xlsx"], key="up_s")
     if new_stock:
         with open(STOCK_FILE_PATH, "wb") as f: f.write(new_stock.getbuffer())
-        st.cache_data.clear()
-        st.session_state.stock_df, st.session_state.plants = load_processed_stock(STOCK_FILE_PATH)
-        st.success("✅ تم التحديث!")
+        df_s, p_list = fast_load_stock()
+        st.session_state.stock_df = df_s
+        st.session_state.plants = p_list
+        st.success("✅ تم تحديث قاعدة المخزون!")
         st.rerun()
 
 if st.session_state.master_df is None or st.session_state.stock_df is None:
-    st.warning("⚠️ يرجى رفع الملفات من القائمة الجانبية أولاً للبدء.")
+    st.warning("⚠️ يرجى رفع ملف الباركودات وملف المخزون من القائمة الجانبية للبدء.")
     st.stop()
 
 unit_options = ["AU", "BAG", "BOX", "CAR", "G", "KG", "M", "ML", "PAC", "PC"]
@@ -115,7 +104,7 @@ order_options = {
 }
 
 # ==============================================================================
-# 🚪 خطوة 1: شاشة التجهيز واختيار الفرع
+# 🚪 خطوة 1: شاشة تحديد الفرع والقسم
 # ==============================================================================
 if st.session_state.app_page == "setup":
     st.markdown('<div class="group-box"><div class="group-title">🏢 خطوة 1: تحديد وجهة العمل والفرع</div>', unsafe_allow_html=True)
@@ -135,7 +124,7 @@ if st.session_state.app_page == "setup":
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
-# 🔍 خطوة 2: الشاشة الاحترافية المعتمدة (استمارة للبحث + استمارة منفصلة للكمية)
+# 🔍 خطوة 2: شاشة المسح الآمنة والبحث الفوري الفعال
 # ==============================================================================
 elif st.session_state.app_page == "scan":
     mode = {"Purchase Req": "purchase", "Internal Sale": "internal", "Damage Issue": "damage", "Recipe Issue": "recipe"}[st.session_state.selected_tab]
@@ -156,19 +145,20 @@ elif st.session_state.app_page == "scan":
     if mode == "damage": modes_list.insert(0, "Short")
     search_mode = st.radio("طريقة البحث المعتمدة الحالية:", modes_list, horizontal=True)
 
-    # 1. استمارة مستقلة ومخصصة فقط للبحث الفوري دون أي ترحيل تلقائي
-    with st.form(key="search_form", clear_on_submit=True):
-        raw_val = st.text_input("🔍 امسح الباركود أو اكتب الكود هنا واضغط Enter (أو اضغط زر ابحث لعرض البيانات والستوك):").strip()
-        submit_search = st.form_submit_button("🔎 ابحث عن الصنف وعرض المخزون", use_container_width=True)
+    # نموذج الاستمارة الخفيفة للبحث
+    with st.form(key="search_bar_form", clear_on_submit=True):
+        raw_val = st.text_input("🔍 امسح الباركود أو اكتب الكود هنا واضغط Enter للبحث الحقيقي:").strip()
+        submit_search = st.form_submit_button("🔎 ابحث عن الصنف وعرض البيانات", use_container_width=True)
         
         if submit_search and raw_val:
             if search_mode == "Short" and len(raw_val) >= 6: raw_val = raw_val[2:6]
             sap_code = None
             
             if search_mode == "Orion":
-                col = next((c for c in st.session_state.stock_df.columns if 'Orion Item Code' in str(c).strip()), None)
-                if col:
-                    m_stock = st.session_state.stock_df[st.session_state.stock_df[col].astype(str).str.strip().replace(r'\.0$', '', regex=True) == raw_val]
+                # البحث في قاعدة الستوك عن كود أوريون
+                orion_col = next((c for c in st.session_state.stock_df.columns if 'Orion' in str(c)), None)
+                if orion_col:
+                    m_stock = st.session_state.stock_df[st.session_state.stock_df[orion_col].astype(str).str.strip().replace(r'\.0$', '', regex=True) == raw_val]
                     if not m_stock.empty: sap_code = str(m_stock.iloc[0, 0]).strip().replace('.0', '')
             else:
                 s_col = 'Item Barcode' if search_mode in ["Short", "Barcode"] else 'Item Code'
@@ -186,45 +176,42 @@ elif st.session_state.app_page == "scan":
                 }
             else:
                 st.session_state.current_searched_item = None
-                st.warning("⚠️ الصنف غير موجود بقاعدة البيانات، تأكد من كود البحث.")
+                st.warning("⚠️ الصنف غير موجود أو الكود خاطئ.")
 
-    # 2. مراجعة بيانات الصنف وعرض الستوك والمبيعات بشكل دائم وثابت
-    st.markdown('<div class="group-box"><div class="group-title">📋 تفاصيل الصنف المقروء حالياً</div>', unsafe_allow_html=True)
+    # عرض تفاصيل الصنف الحالي والمخزون بشكل مستقر وثابت
+    st.markdown('<div class="group-box"><div class="group-title">📋 تفاصيل الصنف والمخزون الحالي للفرع</div>', unsafe_allow_html=True)
     
     if st.session_state.current_searched_item:
         item = st.session_state.current_searched_item
         s_match = st.session_state.stock_df[st.session_state.stock_df.iloc[:, 0].astype(str).str.strip().replace(r'\.0$', '', regex=True) == item['SAP']]
         
+        # جلب الستوك من العمود المطابق للفرع
         live_stock = "0"
-        if not s_match.empty:
-            p_col = [c for c in st.session_state.stock_df.columns if str(c[0]).strip() == st.session_state.selected_plant]
-            if p_col: live_stock = str(s_match.iloc[0][p_col[0]]).split('.')[0]
+        if not s_match.empty and st.session_state.selected_plant in st.session_state.stock_df.columns:
+            live_stock = str(s_match.iloc[0][st.session_state.selected_plant]).split('.')[0]
             
-        sales_info = "لا توجد مبيعات مسجلة"
+        # جلب المبيعات للأشهر المتوفرة بالعناوين
+        sales_segments = []
         if not s_match.empty:
-            sales_cols = [c for c in st.session_state.stock_df.columns if "Total Sales" in str(c[0])]
-            if sales_cols:
-                month_map = {str(sc[1]).strip(): sc for sc in sales_cols}
-                sales_segments = []
-                for m_name, m_col in month_map.items():
-                    try: val_g = f"{float(s_match.iloc[0][m_col]):g}"
-                    except: val_g = "0"
-                    sales_segments.append(f"<b>{m_name}:</b> {val_g}")
-                sales_info = " &nbsp;|&nbsp; ".join(sales_segments)
+            for col in st.session_state.stock_df.columns:
+                if "Sales" in str(col) or "Total" in str(col):
+                    val = str(s_match.iloc[0][col]).split('.')[0]
+                    sales_segments.append(f"<b>{col}:</b> {val}")
+        sales_info = " &nbsp;|&nbsp; ".join(sales_segments) if sales_segments else "لا توجد مبيعات"
 
         st.markdown(f"""
-            <div style="background-color: white; border: 1px solid #aaa; padding: 10px; border-radius: 4px; font-size: 14px; line-height: 1.6;">
+            <div style="background-color: white; border: 1px solid #ccc; padding: 12px; border-radius: 4px; font-size: 14px;">
                 <b>SAP Code:</b> <code style="color: #007acc;">{item['SAP']}</code><br>
-                <b>اسم الصنف (Description):</b> <span>{item['Name']}</span><br>
-                <b>المخزون الحالي في فرعك (Live Stock):</b> <span style="color: green; font-weight: bold;">{live_stock}</span><br>
-                <b>حركة المبيعات السابقة (Sales):</b> <span style="color: #a07000;">{sales_info}</span>
+                <b>اسم الصنف:</b> <span style="font-weight:bold;">{item['Name']}</span><br>
+                <b>المخزون الحالي (Live Stock):</b> <span style="color: green; font-weight: bold;">{live_stock}</span><br>
+                <b>تاريخ المبيعات المحفوظة:</b> <span style="color: #a07000;">{sales_info}</span>
             </div>
         """, unsafe_allow_html=True)
         
         st.write("")
         
-        # استمارة ترحيل مستقلة تماماً لحفظ الصنف والتحكم في الكمية والوحدة
-        with st.form(key="save_qty_form", clear_on_submit=False):
+        # استمارة إدخال الكمية والحفظ والترحيل للجدول
+        with st.form(key="quantity_save_form"):
             col_f1, col_f2 = st.columns(2)
             with col_f1:
                 u_sel = st.selectbox("الوحدة (Unit):", unit_options, index=unit_options.index(item['Unit']) if item['Unit'] in unit_options else 0)
@@ -232,15 +219,14 @@ elif st.session_state.app_page == "scan":
                 if mode in ["internal", "damage", "recipe"]:
                     o_sel = st.selectbox("Order Group:", list(order_options.keys()))
                 else:
-                    st.text_input("تاريخ اليوم لجلسة العمل:", value=datetime.now().strftime('%d.%m.%Y'), disabled=True)
+                    st.text_input("تاريخ جلسة العمل الحالية:", value=datetime.now().strftime('%d.%m.%Y'), disabled=True)
             
-            # حقل إدخال الكمية اليدوي (تكتب الكمية التي تريدها قبل الحفظ)
-            qty_val = st.number_input("✍️ اكتب كمية الجرد الحالية الآن واضغط الحفظ النهائي:", min_value=1.0, value=1.0, step=1.0, format="%g")
+            qty_val = st.number_input("✍️ أدخل كمية الجرد الحالية للصنف المختار:", min_value=1.0, value=1.0, step=1.0, format="%g")
             
-            col_b1, col_b2 = st.columns([3, 1])
-            with col_b1:
+            c_b1, c_b2 = st.columns([3, 1])
+            with c_b1:
                 btn_save = st.form_submit_button("💾 حفظ وإدراج الصنف في الجدول بالأسفل", type="primary", use_container_width=True)
-            with col_b2:
+            with c_b2:
                 btn_clear = st.form_submit_button("CLEAR", use_container_width=True)
                 
             if btn_save:
@@ -258,36 +244,33 @@ elif st.session_state.app_page == "scan":
                     if mode in ["internal", "damage", "recipe"]: new_row["Order"] = order_options.get(o_sel)
                     current_list.append(new_row)
                     
-                # تصفير الشاشة والعودة للبحث التالي ونظافة الصفحة
                 st.session_state.current_searched_item = None
-                st.success(f"✅ تم حفظ {item['Name']} بنجاح!")
+                st.success("✅ تم حفظ الصنف بنجاح!")
                 st.rerun()
                 
             if btn_clear:
                 st.session_state.current_searched_item = None
                 st.rerun()
     else:
-        st.markdown("<p style='text-align:center; color:#777; padding:15px;'>يرجى مسح كود الصنف بالخيار الأعلى أولاً للتحقق من المبيعات والستوك...</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#777; padding:15px;'>يرجى مسح كود الصنف بالخيار الأعلى أولاً للتحقق والبدء...</p>", unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ==============================================================================
-    # 📊 خطوة 3: لوحة المعاينة الإجمالية الملونة للتصدير
+    # 📊 خطوة 3: لوحة المعاينة الإجمالية والتصدير النهائي
     # ==============================================================================
     if current_list:
         st.markdown('<div class="group-box"><div class="group-title">📊 لوحة مراجعة ومعاينة القائمة الإجمالية</div>', unsafe_allow_html=True)
         
         c_m1, c_m2, c_m3 = st.columns(3)
-        with c_m1:
-            st.markdown(f'<div class="metric-blue"><div class="metric-title" style="color:white;">عدد الأصناف الحالي</div><div class="metric-value" style="color:white; font-size:22px;">{len(current_list)}</div></div>', unsafe_allow_html=True)
-        with c_m2:
-            st.markdown(f'<div class="metric-green"><div class="metric-title" style="color:white;">TOTAL ORDER</div><div class="metric-value" style="color:white; font-size:22px;">{len(current_list)}</div></div>', unsafe_allow_html=True)
+        with c_m1: st.markdown(f'<div class="metric-blue">عدد الأصناف الحالي<br><h3>{len(current_list)}</h3></div>', unsafe_allow_html=True)
+        with c_m2: st.markdown(f'<div class="metric-green">TOTAL ORDER<br><h3>{len(current_list)}</h3></div>', unsafe_allow_html=True)
         with c_m3:
             if mode == "purchase":
                 suppliers_count = len(set([i.get('Supplier_ID', '') for i in current_list if i.get('Supplier_ID')]))
-                st.markdown(f'<div class="metric-orange"><div class="metric-title" style="color:white;">عدد الموردين</div><div class="metric-value" style="color:white; font-size:22px;">{suppliers_count}</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="metric-orange">عدد الموردين<br><h3>{suppliers_count}</h3></div>', unsafe_allow_html=True)
             else:
-                st.markdown('<div class="metric-orange"><div class="metric-title" style="color:white;">عدد الموردين</div><div class="metric-value" style="color:white; font-size:22px;">-</div></div>', unsafe_allow_html=True)
+                st.markdown('<div class="metric-orange">عدد الموردين<br><h3>-</h3></div>', unsafe_allow_html=True)
         
         st.write("")
         df_preview = pd.DataFrame(current_list)
