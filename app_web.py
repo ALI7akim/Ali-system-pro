@@ -6,13 +6,13 @@ import io
 # إعدادات الصفحة
 st.set_page_config(page_title="ALI SYSTEM PRO", page_icon="📦", layout="centered")
 
-# تطبيق نمط وألوان برنامج الكمبيوتر الكلاسيكي مع كود الـ JavaScript للتحكم بالـ Enter
+# تطبيق نمط وألوان برنامج الكمبيوتر الكلاسيكي مع كود الـ JavaScript للتنقل الآلي
 st.markdown("""
     <style>
     .main { background-color: #f0f0f0 !important; }
     .main .block-container { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; max-width: 850px; }
     
-    /* العدادات الملونة */
+    /* العدادات الملونة عند المعاينة */
     .metric-blue { background-color: #007acc; color: white; text-align: center; padding: 10px; font-weight: bold; border-radius: 4px; border: 1px solid #005999; }
     .metric-green { background-color: #2ea44f; color: white; text-align: center; padding: 10px; font-weight: bold; border-radius: 4px; border: 1px solid #227d3c; }
     .metric-orange { background-color: #f37023; color: white; text-align: center; padding: 10px; font-weight: bold; border-radius: 4px; border: 1px solid #d05616; }
@@ -40,12 +40,12 @@ st.markdown("""
     </style>
 
     <script>
-    // سكربت جافاسكربت لمراقبة ضغط أزرار الإنتر والتنقل الفوري بين الخانات
+    // سكربت جافاسكربت لمراقبة ضغط أزرار الإنتر والتنقل الفوري بين الخانات على نفس السطر
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') {
             var activeEl = document.activeElement;
             
-            // إذا كان المستخدم واقف في خانة الباركود وضغط إنتر
+            // إذا كان المستخدم واقفا في خانة الباركود وضغط إنتر، ينتقل للكمية فوراً
             if (activeEl && activeEl.id && activeEl.id.includes('barcode_input')) {
                 setTimeout(function() {
                     var qtyInput = document.querySelector('input[id*="qty_input"]');
@@ -53,10 +53,10 @@ st.markdown("""
                         qtyInput.focus();
                         qtyInput.select();
                     }
-                }, 300);
+                }, 200);
             }
             
-            // إذا كان المستخدم واقف في خانة الكمية وضغط إنتر
+            // إذا كان المستخدم واقفا في خانة الكمية وضغط إنتر، يتم تفعيل زر الحفظ تلقائياً
             if (activeEl && activeEl.id && activeEl.id.includes('qty_input')) {
                 setTimeout(function() {
                     var saveBtn = document.querySelector('button[id*="save_btn"]');
@@ -93,14 +93,11 @@ if "stock_df" not in st.session_state: st.session_state.stock_df = None
 if "plants" not in st.session_state: st.session_state.plants = []
 if "active_item" not in st.session_state: st.session_state.active_item = None
 
-# إدارة الانتقال والخيارات
+# إدارة الانتقال بين الصفحات
 if "app_page" not in st.session_state: st.session_state.app_page = "setup"
 if "selected_plant" not in st.session_state: st.session_state.selected_plant = ""
 if "selected_tab" not in st.session_state: st.session_state.selected_tab = "Purchase Req"
 if "barcode_key" not in st.session_state: st.session_state.barcode_key = 0
-
-# متغير وسيط للاحتفاظ بقيمة الباركود المقروء بعد الـ rerun لضمان ثبات التركيز
-if "last_valid_barcode" not in st.session_state: st.session_state.last_valid_barcode = ""
 
 # --- القائمة الجانبية (تحميل الملفات) ---
 with st.sidebar:
@@ -120,6 +117,7 @@ if st.session_state.master_df is None or st.session_state.stock_df is None:
     st.warning("⚠️ يرجى رفع ملف الباركودات وملف المخزون من القائمة الجانبية للبدء.")
     st.stop()
 
+# خيارات النظام الثابتة
 unit_options = ["AU", "BAG", "BOX", "CAR", "G", "KG", "M", "ML", "PAC", "PC"]
 order_options = {
     "500000 Customer Service": "500000", "500001 Fruit and vegetable": "500001",
@@ -151,7 +149,7 @@ if st.session_state.app_page == "setup":
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ==============================================================================
-# 🔍 الصفحة الثانية: شاشة المسح الفوري والتنقل بالإنتر (معالجة JS الحية)
+# 🔍 الصفحة الثانية: شاشة المسح الفوري (الباركود والكمية على نفس الخط)
 # ==============================================================================
 elif st.session_state.app_page == "scan":
     mode = {"Purchase Req": "purchase", "Internal Sale": "internal", "Damage Issue": "damage", "Recipe Issue": "recipe"}[st.session_state.selected_tab]
@@ -172,10 +170,11 @@ elif st.session_state.app_page == "scan":
     if mode == "damage": modes_list.insert(0, "Short")
     search_mode = st.radio("طريقة البحث المعتمدة الحالية:", modes_list, horizontal=True)
 
+    # دالة معالجة البحث المباشر فور قراءة الباركود
     def on_barcode_change():
         input_key = f"barcode_input_{st.session_state.barcode_key}"
         raw_val = str(st.session_state[input_key]).strip()
-        if not raw_val or raw_val == "0" or raw_val == "" or raw_val == "None": return
+        if not raw_val or raw_val == "0" or raw_val == "None" or raw_val == "": return
         
         if search_mode == "Short" and len(raw_val) >= 6: raw_val = raw_val[2:6]
         sap_code = None
@@ -187,7 +186,7 @@ elif st.session_state.app_page == "scan":
                 if not m_stock.empty: sap_code = str(m_stock.iloc[0, 0]).strip().replace('.0', '')
         else:
             s_col = 'Item Barcode' if search_mode in ["Short", "Barcode"] else 'Item Code'
-            m_temp = m_temp = st.session_state.master_df.copy()
+            m_temp = st.session_state.master_df.copy()
             act_col = next((c for c in m_temp.columns if s_col.lower() in str(c).lower()), s_col)
             m_temp[act_col] = m_temp[act_col].astype(str).str.strip().replace(r'\.0$', '', regex=True)
             m_master = m_temp[m_temp[act_col] == raw_val]
@@ -199,11 +198,10 @@ elif st.session_state.app_page == "scan":
                 "SAP": sap_code, "Name": str(row['Item Name']), "Supplier": str(row['Supplier Name']),
                 "Factor": str(row['Factor']).split('.')[0], "Unit": str(row['UOM CODE']), "Supplier_ID": str(row['Supplier']).split('.')[0]
             }
-            st.session_state.last_valid_barcode = raw_val
         else:
             st.session_state.active_item = None
 
-    # 🌟 تعديل 1: الخانتين متواجدتين معاً في الصفحة لمنع اختفاء العناصر، ويتم التنقل بينهما عن طريق الـ JavaScript تلقائياً بالـ Enter
+    # 🌟 ميزة عرض خانة الباركود وخانة الكمية على نفس الخط (سطر واحد متناسق)
     col_inputs1, col_inputs2 = st.columns([2, 1])
     
     with col_inputs1:
@@ -214,8 +212,8 @@ elif st.session_state.app_page == "scan":
                         on_change=on_barcode_change)
         
     with col_inputs2:
-        # حقل الكمية يقبل الأرقام العشرية والكسور (مثل 0.5) ومربوط برمجياً بالـ JavaScript ليعمل عند الضغط على Enter في الباركود
-        qty_input = st.number_input("✏️ الكمية المطلوبة الحالية:", 
+        # حقل الكمية بجانبه مباشرة يدعم الكسور العشرية (مثل 0.5) ومربوط بالإنتر تلقائياً
+        qty_input = st.number_input("✏️ الكمية الحالية:", 
                                     min_value=0.0, value=0.0, step=0.001, format="%g", key=f"qty_input_{st.session_state.barcode_key}")
 
     st.markdown('<div class="group-box"><div class="group-title">📋 تفاصيل الصنف الحالي في الذاكرة</div>', unsafe_allow_html=True)
@@ -247,7 +245,7 @@ elif st.session_state.app_page == "scan":
                 st.text_input("تاريخ اليوم لجلسة العمل:", value=datetime.now().strftime('%d.%m.%Y'), disabled=True)
                 
         st.write("")
-        # زر الحفظ مربوط بالـ JavaScript ليتم النقر عليه برمجياً بمجرد ضغط Enter داخل حقل الكمية
+        # زر الحفظ يعمل تلقائياً عند الضغط على Enter في حقل الكمية بفضل الـ JS المدمج
         if st.button("💾 حفظ الصنف إلى القائمة والانتقال للمسح التالي (Enter)", type="primary", use_container_width=True, key=f"save_btn_{st.session_state.barcode_key}") or qty_input > 0:
             if qty_input > 0:
                 duplicate = False
@@ -264,12 +262,12 @@ elif st.session_state.app_page == "scan":
                     if mode in ["internal", "damage", "recipe"]: new_row["Order"] = order_options.get(o_sel)
                     current_list.append(new_row)
             
-            # 🌟 تعديل 2: تصفير كامل الشاشة، وتغيير الـ key لفتح حقل مسح باركود جديد تماماً واستعادة الـ Focus التلقائي له
+            # تصفير الواجهة تماماً والعودة لوضع الاستعداد لضمان بقاء الفوكس داخل خانة الباركود الجديدة
             st.session_state.active_item = None
             st.session_state.barcode_key += 1
             st.rerun()
     else:
-        st.markdown("<p style='text-align:center; color:#777; padding:15px;'>النظام جاهز ومستعد تماماً لاستقبال مسحة الباركود الأولى أو التالية...</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#777; padding:15px;'>النظام جاهز ومستعد تماماً لاستقبال مسحة الباركود الجديدة...</p>", unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
