@@ -1,5 +1,5 @@
-streamlit
-pandas
+streamlit>=1.35.0
+pandas>=2.0.0
 openpyxl
-gspread
-streamlit-gsheets
+gspread>=6.0.0
+streamlit-gsheets==0.0.3
