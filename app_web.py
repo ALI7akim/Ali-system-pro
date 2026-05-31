@@ -2,7 +2,11 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import io
+import requests
 import streamlit.components.v1 as components
+
+# 🌐 ضع رابط الـ Web URL الخاص بك من Google Apps Script هنا بين القوسين:
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbx-b74uobmXW-s1-vVqAKhaSdKWmXdym-WyD8dTJxc3wyGq7C5bK0ln-OsMHkvWYpR6/exec"
 
 # Page Configuration
 st.set_page_config(page_title="ALI SYSTEM PRO", page_icon="📦", layout="centered")
@@ -68,6 +72,7 @@ if "active_item" not in st.session_state: st.session_state.active_item = None
 if "app_page" not in st.session_state: st.session_state.app_page = "setup"
 if "selected_plant" not in st.session_state: st.session_state.selected_plant = ""
 if "selected_tab" not in st.session_state: st.session_state.selected_tab = "Purchase Req"
+if "device_name" not in st.session_state: st.session_state.device_name = "Device_1"
 if "barcode_key" not in st.session_state: st.session_state.barcode_key = 0
 
 # --- Sidebar (System Files Upload) ---
@@ -97,10 +102,10 @@ order_options = {
 }
 
 # ==============================================================================
-# 🏢 PAGE 1: Configuration Setup (Plant & Tab Selection)
+# 🏢 PAGE 1: Configuration Setup (Plant & Tab & Device Selection)
 # ==============================================================================
 if st.session_state.app_page == "setup":
-    st.markdown('<div class="group-box"><div class="group-title">🏢 Step 1: Select Work Destination & Plant</div>', unsafe_allow_html=True)
+    st.markdown('<div class="group-box"><div class="group-title">🏢 Step 1: Configuration Setup</div>', unsafe_allow_html=True)
     
     plant_idx = 0
     if st.session_state.selected_plant in st.session_state.plants:
@@ -111,10 +116,13 @@ if st.session_state.app_page == "setup":
     tab_idx = tab_list.index(st.session_state.selected_tab) if st.session_state.selected_tab in tab_list else 0
     tab_selected = st.radio("📂 Choose Current Section:", tab_list, index=tab_idx, horizontal=True)
     
+    dev_input = st.text_input("📱 Device Name / Handheld ID (e.g., Device_A, Station_2):", value=st.session_state.device_name)
+    
     st.write("")
     if st.button("🚀 Proceed to Scanning Screen 📥", type="primary", use_container_width=True):
         st.session_state.selected_plant = plant_selected
         st.session_state.selected_tab = tab_selected
+        st.session_state.device_name = dev_input.strip() if dev_input.strip() else "Device_1"
         st.session_state.app_page = "scan"
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
@@ -133,7 +141,7 @@ elif st.session_state.app_page == "scan":
             st.session_state.active_item = None
             st.rerun()
     with c_nav2:
-        st.markdown(f"<div style='text-align:right; font-size:14px; padding-top:8px; color:#555;'>📍 Plant: <b>{st.session_state.selected_plant}</b> | Section: <b>{st.session_state.selected_tab}</b></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align:right; font-size:13px; padding-top:8px; color:#555;'>📍 Plant: <b>{st.session_state.selected_plant}</b> | Device: <b>{st.session_state.device_name}</b><br>Section: <b>{st.session_state.selected_tab}</b></div>", unsafe_allow_html=True)
     
     st.divider()
 
@@ -275,7 +283,8 @@ elif st.session_state.app_page == "scan":
                 if not duplicate:
                     new_row = {
                         "SAP": item['SAP'], "Unit": u_sel, "Qty": str(qty_input),
-                        "Plant": st.session_state.selected_plant, "Supplier_ID": item['Supplier_ID'], "Name": item['Name'], "Supplier": item['Supplier']
+                        "Plant": st.session_state.selected_plant, "Supplier_ID": item['Supplier_ID'], "Name": item['Name'], "Supplier": item['Supplier'],
+                        "Scanned_By_Device": st.session_state.device_name
                     }
                     if mode in ["internal", "damage", "recipe"]: new_row["Order"] = order_options.get(o_sel)
                     current_list.append(new_row)
@@ -303,7 +312,7 @@ elif st.session_state.app_page == "scan":
             for idx, entry in enumerate(current_list):
                 col_i1, col_i2, col_i3, col_i4 = st.columns([3, 1.5, 1.5, 1])
                 with col_i1:
-                    st.markdown(f"<div style='padding-top:5px; font-size:13px;'><b>{entry['Name']}</b><br><small style='color:#666;'>SAP: {entry['SAP']} | Supplier: {entry.get('Supplier', '-')}</small></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='padding-top:5px; font-size:13px;'><b>{entry['Name']}</b><br><small style='color:#666;'>SAP: {entry['SAP']} | Device: {entry.get('Scanned_By_Device', '-')}</small></div>", unsafe_allow_html=True)
                 with col_i2:
                     new_qty = st.number_input(f"Qty", min_value=0.001, value=float(entry['Qty']), step=0.001, format="%g", key=f"edit_qty_{idx}")
                     entry['Qty'] = str(new_qty)
@@ -345,19 +354,42 @@ elif st.session_state.app_page == "scan":
             
             for it in current_list:
                 if mode == "internal":
-                    final_rows.append({'SAP': it['SAP'], 'N1': '', 'N2': '', 'QUTY': it['Qty'], 'UNT': it['Unit'], 'LOC': '1000', 'COST CNTER': it['Plant'], 'ORDER': it.get('Order',''), 'N3': '', 'N4': '', 'N5': '', 'N6': '', 'N7': '', 'MOV TYP': 'ZX1', 'N9': '', 'N10': '', 'PLANT': it['Plant']})
+                    final_rows.append({'SAP': it['SAP'], 'N1': '', 'N2': '', 'QUTY': it['Qty'], 'UNT': it['Unit'], 'LOC': '1000', 'COST CNTER': it['Plant'], 'ORDER': it.get('Order',''), 'N3': '', 'N4': '', 'N5': '', 'N6': '', 'N7': '', 'MOV TYP': 'ZX1', 'N9': '', 'N10': '', 'PLANT': it['Plant'], 'DEVICE_ID': it.get('Scanned_By_Device', '')})
                 elif mode == "damage":
-                    final_rows.append({'ITEM': it['SAP'], 'N1': '', 'N2': '', 'QUTY': it['Qty'], 'UON': it['Unit'], 'LOC': '1000', 'PLANT_MAIN': it['Plant'], 'ORDER': it.get('Order',''), 'N3': '', 'N4': '', 'N5': '', 'N6': '', 'N7': '', 'DAMAGE TYPE': 'Z51', 'N11': '', 'N12': '', 'PLANT': it['Plant']})
+                    final_rows.append({'ITEM': it['SAP'], 'N1': '', 'N2': '', 'QUTY': it['Qty'], 'UON': it['Unit'], 'LOC': '1000', 'PLANT_MAIN': it['Plant'], 'ORDER': it.get('Order',''), 'N3': '', 'N4': '', 'N5': '', 'N6': '', 'N7': '', 'DAMAGE TYPE': 'Z51', 'N11': '', 'N12': '', 'PLANT': it['Plant'], 'DEVICE_ID': it.get('Scanned_By_Device', '')})
                 elif mode == "recipe":
-                    final_rows.append({'ITEM': it['SAP'], 'N1': '', 'N2': '', 'QUTY': it['Qty'], 'N3': '', 'LOC': '1000', 'N4': '', 'N5': '', 'N6': '', 'MOV': '317', 'N7': '', 'N8': '', 'PLANT': it['Plant']})
+                    final_rows.append({'ITEM': it['SAP'], 'N1': '', 'N2': '', 'QUTY': it['Qty'], 'N3': '', 'LOC': '1000', 'N4': '', 'N5': '', 'N6': '', 'MOV': '317', 'N7': '', 'N8': '', 'PLANT': it['Plant'], 'DEVICE_ID': it.get('Scanned_By_Device', '')})
                 elif mode == "purchase":
                     if it['Supplier_ID'] != last_v: curr_idx += 1; last_v = it['Supplier_ID']
                     try: p_grp_val = str(int(it['Plant']) - 1000) if int(it['Plant']) > 1000 else '104'
                     except: p_grp_val = '104'
-                    final_rows.append({'Indicator': curr_idx, 'Doc Type': 'ZLPO', 'Vendor': it['Supplier_ID'], 'P.Org': '1100', 'P. Grp': p_grp_val, 'Company Code': '1000', 'Doc Date': today.strftime('%d.%m.%Y'), 'Material': it['SAP'], 'Quantity': it['Qty'], 'UOM': it['Unit'], 'Plant': it['Plant'], 'Storage Location': '1000', 'Delivery Date': (today + timedelta(days=2)).strftime('%d.%m.%Y'), 'Return': ''})
+                    final_rows.append({'Indicator': curr_idx, 'Doc Type': 'ZLPO', 'Vendor': it['Supplier_ID'], 'P.Org': '1100', 'P. Grp': p_grp_val, 'Company Code': '1000', 'Doc Date': today.strftime('%d.%m.%Y'), 'Material': it['SAP'], 'Quantity': it['Qty'], 'UOM': it['Unit'], 'Plant': it['Plant'], 'Storage Location': '1000', 'Delivery Date': (today + timedelta(days=2)).strftime('%d.%m.%Y'), 'Return': '', 'DEVICE_ID': it.get('Scanned_By_Device', '')})
                     
             df_final = pd.DataFrame(final_rows)
             
+            st.divider()
+            
+            # --- 🌐 زر التصدير السحابي المطور لتوزيع الفروع والأجهزة ---
+            if st.button("🌐 إرسال وتصدير البيانات مباشرة أونلاين", type="primary", use_container_width=True):
+                if WEBHOOK_URL == "https://script.google.com/macros/s/XXXXXX/exec":
+                    st.error("⚠️ يرجى وضع رابط الـ Web App الخاص بك في السطر رقم 14 أولاً!")
+                else:
+                    with st.spinner("جاري فرز الفروع وإرسال البيانات أونلاين..."):
+                        try:
+                            custom_sheet_name = f"{mode.capitalize()}_Plant_{st.session_state.selected_plant}"
+                            
+                            payload = {
+                                "sheet_name": custom_sheet_name,
+                                "data": df_final.to_dict(orient="records")
+                            }
+                            response = requests.post(WEBHOOK_URL, json=payload)
+                            if response.status_code == 200:
+                                st.success(f"✨ تم إرسال البيانات أونلاين بنجاح إلى الورقة المخصصة: [{custom_sheet_name}]")
+                            else:
+                                st.error(f"فشلت المزامنة. رمز الخطأ: {response.status_code}")
+                        except Exception as sync_err:
+                            st.error(f"حدث خطأ أثناء الاتصال بالسيرفر: {sync_err}")
+
             st.divider()
             
             col_dl1, col_dl2 = st.columns(2)
