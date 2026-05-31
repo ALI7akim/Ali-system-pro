@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import io
 import streamlit.components.v1 as components
+from streamlit_gsheets import GSheetsConnection  # المكتبة الجديدة للربط السحابي
 
 # Page Configuration
 st.set_page_config(page_title="ALI SYSTEM PRO", page_icon="📦", layout="centered")
@@ -145,7 +146,6 @@ elif st.session_state.app_page == "scan":
     def on_barcode_change():
         input_key = f"barcode_input_{st.session_state.barcode_key}"
         raw_val = str(st.session_state[input_key]).strip()
-        # Clean input to allow digits only
         raw_val = ''.join(filter(str.isdigit, raw_val))
         if not raw_val or raw_val == "0" or raw_val == "": return
         
@@ -174,7 +174,7 @@ elif st.session_state.app_page == "scan":
         else:
             st.session_state.active_item = None
 
-    # Barcode and Quantity Input Fields Side-by-Side (Same Row)
+    # Barcode and Quantity Input Fields Side-by-Side
     col_inputs1, col_inputs2 = st.columns([2, 1])
     
     with col_inputs1:
@@ -265,7 +265,6 @@ elif st.session_state.app_page == "scan":
                 st.text_input("Posting Date:", value=datetime.now().strftime('%d.%m.%Y'), disabled=True)
                 
         st.write("")
-        # Auto-save triggered by Enter on Qty or Click
         if st.button("💾 Save Item & Scan Next (Enter)", type="primary", use_container_width=True, key=f"save_btn_{st.session_state.barcode_key}") or qty_input > 0:
             if qty_input > 0:
                 duplicate = False
@@ -282,7 +281,6 @@ elif st.session_state.app_page == "scan":
                     if mode in ["internal", "damage", "recipe"]: new_row["Order"] = order_options.get(o_sel)
                     current_list.append(new_row)
             
-            # Reset UI state & prepare for next clean scan
             st.session_state.active_item = None
             st.session_state.barcode_key += 1
             st.rerun()
@@ -360,6 +358,22 @@ elif st.session_state.app_page == "scan":
                     final_rows.append({'Indicator': curr_idx, 'Doc Type': 'ZLPO', 'Vendor': it['Supplier_ID'], 'P.Org': '1100', 'P. Grp': p_grp_val, 'Company Code': '1000', 'Doc Date': today.strftime('%d.%m.%Y'), 'Material': it['SAP'], 'Quantity': it['Qty'], 'UOM': it['Unit'], 'Plant': it['Plant'], 'Storage Location': '1000', 'Delivery Date': (today + timedelta(days=2)).strftime('%d.%m.%Y'), 'Return': ''})
                     
             df_final = pd.DataFrame(final_rows)
+            
+            # --- الميزة الجديدة: زر المزامنة والرفع أونلاين لمشاهدته عبر الكمبيوتر ---
+            st.write("")
+            if st.button("🌐 Upload & Sync Online to Google Sheets", type="primary", use_container_width=True):
+                try:
+                    # تفعيل الاتصال المباشر مع سحابة جداول بيانات جوجل وثيقة "AliSystem_Sync"
+                    conn = st.connection("gsheets", type=GSheetsConnection)
+                    # رفع وعمل تحديث للجدول أونلاين فوراً
+                    conn.update(worksheet=f"AliSystem_{mode}", data=df_final)
+                    st.success("✨ Sent Successfully! You can now open Google Sheets from your PC to view the data.")
+                except Exception as sync_err:
+                    st.error(f"Cloud Connection Pending configuration: {sync_err}")
+                    st.info("💡 Note: To active the Google sync, make sure to add your secret Google Sheet URL inside '.streamlit/secrets.toml' file on your deployment platform.")
+
+            st.divider()
+            
             col_dl1, col_dl2 = st.columns(2)
             with col_dl1:
                 buffer_xlsx = io.BytesIO()
