@@ -3,7 +3,6 @@ import pandas as pd
 from datetime import datetime, timedelta
 import io
 import streamlit.components.v1 as components
-from streamlit_gsheets import GSheetsConnection
 
 # Page Configuration
 st.set_page_config(page_title="ALI SYSTEM PRO", page_icon="📦", layout="centered")
@@ -359,17 +358,6 @@ elif st.session_state.app_page == "scan":
                     
             df_final = pd.DataFrame(final_rows)
             
-            # --- Google Sheets Online Sync Button ---
-            st.write("")
-            if st.button("🌐 Upload & Sync Online to Google Sheets", type="primary", use_container_width=True):
-                try:
-                    conn = st.connection("gsheets", type=GSheetsConnection)
-                    conn.update(worksheet=f"AliSystem_{mode}", data=df_final)
-                    st.success("✨ Sent Successfully! You can now open Google Sheets from your PC to view the data.")
-                except Exception as sync_err:
-                    st.error(f"Cloud Connection Pending configuration: {sync_err}")
-                    st.info("💡 Note: To activate Google Sync, add your secret Sheet URL inside Dashboard Secrets.")
-
             st.divider()
             
             col_dl1, col_dl2 = st.columns(2)
